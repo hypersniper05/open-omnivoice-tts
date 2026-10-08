@@ -60,7 +60,7 @@ readers in [LibriTTS-R](https://www.openslr.org/141/) (credits: [Voices/ATTRIBUT
 | | |
 |---|---|
 | Docker | Docker Desktop (Windows) or Docker Engine with Compose and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) (Linux) |
-| GPU | NVIDIA, 4 GB of free VRAM; driver 580 or newer. Tested on an RTX 3080 |
+| GPU | NVIDIA, at least 6 GB of VRAM recommended; driver 580 or newer. Tested on an RTX 3080 |
 | RAM | 16 GB |
 | Disk | About 40 GB free for the first start (about 20 GB of it is Docker's build cache: `docker builder prune` frees it) |
 

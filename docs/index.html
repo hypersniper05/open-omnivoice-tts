@@ -485,7 +485,7 @@
     <div class="wrap">
       <div class="head reveal">
         <div><span class="tag">// How it works //</span><h2>From clone to speech<br>in four steps.</h2></div>
-        <p>You need Docker and an NVIDIA GPU with 4 GB of free VRAM. The start script does the rest.</p>
+        <p>You need Docker and an NVIDIA GPU, with at least 6 GB of VRAM recommended. The start script does the rest.</p>
       </div>
       <div class="how reveal">
         <div class="steps" id="steps"></div>
@@ -517,7 +517,7 @@
           <ul><li>About 32 s of speech</li><li>On 4 CPU cores: 183 s</li><li>A new voice is prepared once: 6 s with a transcript, 14 s without</li></ul>
         </div>
         <div class="darkc reveal">
-          <div class="card"><div class="lbl">What you need</div><div class="big">4 GB <small>of free VRAM</small></div>
+          <div class="card"><div class="lbl">What you need</div><div class="big">6 GB <small>of VRAM, recommended</small></div>
             <p>NVIDIA GPU, driver 580 or newer</p>
             <a class="btn btn-light" href="#how">See the quick start</a></div>
           <ul><li>Docker Desktop (Windows), or Docker Engine with the NVIDIA Container Toolkit (Linux)</li>
@@ -548,7 +548,7 @@
             <code>openai</code> SDKs. Set the base URL to <code>http://&lt;host&gt;:8008/v1</code> and the model to
             <code>tts-1</code>.</p></details>
         <details><summary>Which GPUs work?<span class="pm"></span></summary>
-          <p>NVIDIA GPUs with 4 GB of free VRAM. The start script builds the kernels for your card's architecture.
+          <p>NVIDIA GPUs, with at least 6 GB of VRAM recommended. The start script builds the kernels for your card's architecture.
             RTX 30-series cards are tested.</p></details>
         <details><summary>Can I clone my own voice?<span class="pm"></span></summary>
           <p>Yes. Put a 3 to 20 second clip of one speaker in <code>Voices/</code>, with what it says in a
