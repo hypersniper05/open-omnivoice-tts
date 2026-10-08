@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>open-omnivoice-tts: self-hosted OpenAI-compatible text to speech</title>
+<meta name="description" content="Self-hosted OpenAI-compatible text-to-speech for OmniVoice: voice cloning, 600+ languages, 12 open voices, Docker on an NVIDIA GPU.">
+<meta property="og:title" content="open-omnivoice-tts">
+<meta property="og:description" content="A sentence in 0.3 seconds. Any voice, 600+ languages, on your own GPU.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://hypersniper05.github.io/open-omnivoice-tts/">
+<meta property="og:image" content="https://hypersniper05.github.io/open-omnivoice-tts/assets/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add("js");</script>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #141414; --ink: #1f2420; --muted: #737373; --line: #e8e8e8;
+    --soft: #f6f8f7; --soft2: #f4f4f4;
+    --accent: #fb510e; --accent-dark: #e14204; --accent-light: #fd8a5c; --accent-tint: #fff1ea;
+    --dark: #1b1e1c; --dark-line: #2e332f; --dark-muted: #a3a8a4;
+    --wave: #d9d9d9; --wave-played: var(--accent);
+    --shadow: 0 1px 4px rgba(12,12,13,.1), 0 1px 4px rgba(12,12,13,.05);
+    --shadow-lg: 0 18px 40px rgba(12,12,13,.10), 0 2px 6px rgba(12,12,13,.05);
+    --r: 16px; --r-lg: 24px;
+    --font: "Outfit", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 96px; -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 var(--font); overflow-x: hidden; }
+  img { max-width: 100%; display: block; }
+  a { color: inherit; }
+  code { font-family: var(--mono); font-size: .9em; background: var(--soft2); border-radius: 6px; padding: .1em .35em; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+  section { padding: 96px 0 0; }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; gap: 12px; height: 48px; padding: 0 24px; border-radius: 999px;
+         font: 500 14px/1 var(--font); letter-spacing: .02em; text-transform: uppercase; text-decoration: none;
+         border: 1px solid transparent; cursor: pointer; transition: background .2s, transform .2s, box-shadow .2s; }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-dark { background: var(--fg); color: #fff; padding: 0 8px 0 24px; }
+  .btn-dark .arrow { width: 32px; height: 32px; border-radius: 50%; background: #fff; color: var(--fg);
+                     display: grid; place-items: center; transition: transform .2s; }
+  .btn-dark:hover .arrow { transform: rotate(45deg); }
+  .btn-orange { background: var(--accent); color: #fff; }
+  .btn-orange:hover { background: var(--accent-dark); }
+  .btn-light { background: #fff; color: var(--fg); border-color: var(--line); }
+  .btn-light:hover { box-shadow: var(--shadow); }
+  .btn-sm { height: 40px; padding: 0 20px; }
+
+  /* Section labels and headers */
+  .tag { display: inline-block; font-size: 12px; line-height: 1; padding: 8px 14px; border-radius: 100px;
+         background: var(--soft); border: 1px solid var(--line); color: var(--ink); margin-bottom: 18px; white-space: nowrap; }
+  .tag.dark { background: transparent; border-color: var(--dark-line); color: var(--dark-muted); }
+  h1, h2, h3 { font-weight: 500; margin: 0; color: var(--fg); }
+  h2 { font-size: clamp(30px, 4vw, 44px); line-height: 1.08; letter-spacing: -.015em; text-wrap: balance; }
+  h3 { font-size: 20px; line-height: 1.35; font-weight: 600; color: var(--ink); }
+  .head { display: grid; grid-template-columns: 1fr 1fr; gap: 24px 64px; align-items: end; margin-bottom: 48px; }
+  .head p { margin: 0; color: var(--muted); font-size: 17px; max-width: 560px; justify-self: end; }
+  .muted { color: var(--muted); }
+
+  /* Navigation */
+  .nav { position: sticky; top: 16px; z-index: 50; padding-top: 16px; margin-top: -16px; }
+  .nav-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+             background: rgba(255,255,255,.86); -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
+             border: 1px solid var(--line); border-radius: 20px; padding: 10px 10px 10px 18px; box-shadow: var(--shadow); }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 500; font-size: 18px; letter-spacing: -.01em; }
+  .brand img { width: auto; height: 24px; }
+  .nav-links { display: flex; gap: 30px; }
+  .nav-links a { text-decoration: none; color: #555; font-size: 15px; transition: color .2s; }
+  .nav-links a:hover { color: var(--fg); }
+
+  /* Hero */
+  .hero { text-align: center; padding-top: 72px; }
+  .hero h1 { font-size: clamp(44px, 7.4vw, 84px); line-height: 1.02; letter-spacing: -.03em; max-width: 980px; margin: 0 auto; }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero .sub { color: var(--muted); font-size: clamp(17px, 2vw, 19px); max-width: 640px; margin: 22px auto 32px; }
+  .hero .ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .hero-media { position: relative; margin-top: 56px; border-radius: var(--r-lg); overflow: hidden; background: var(--soft2);
+                aspect-ratio: 21 / 9; }
+  .hero-media > img { width: 100%; height: 100%; object-fit: cover; }
+  .hero-card { position: absolute; left: 28px; top: 28px; width: min(420px, calc(100% - 56px)); text-align: left;
+               background: rgba(255,255,255,.94); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+               border-radius: var(--r); box-shadow: var(--shadow-lg); padding: 18px; }
+  .hero-card .req { display: flex; align-items: center; gap: 8px; font: 500 13px/1 var(--mono); color: var(--ink); }
+  .hero-card .req .m { color: #fff; background: var(--fg); border-radius: 6px; padding: 4px 7px; font-size: 11px; }
+  .hero-card .req .ok { margin-left: auto; color: #16803c; background: #e8f6ed; border-radius: 6px; padding: 4px 7px; font-size: 11px; }
+  .hero-card pre { margin: 12px 0 14px; font: 13px/1.55 var(--mono); color: #3b3f3c; white-space: pre-wrap; word-break: break-word; }
+  .hero-card pre .s { color: var(--accent-dark); }
+  .works { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 12px; margin-top: 36px; }
+  .works span { font-size: 14px; color: var(--muted); }
+  .works b { font-weight: 500; font-size: 14px; color: var(--ink); background: var(--soft); border: 1px solid var(--line);
+             border-radius: 999px; padding: 6px 14px; }
+
+  /* Stats */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--soft); border: 1px solid var(--line);
+           border-radius: var(--r-lg); margin-top: 72px; }
+  .stat { padding: 28px 28px 26px; }
+  .stat + .stat { border-left: 1px solid var(--line); }
+  .stat b { display: block; font-size: clamp(34px, 4vw, 46px); font-weight: 500; line-height: 1.05; letter-spacing: -.02em; }
+  .stat b small { font-size: .5em; color: var(--accent); margin-left: 2px; letter-spacing: 0; }
+  .stat span { color: var(--muted); font-size: 15px; }
+
+  /* Cards */
+  .card { background: #fff; border-radius: var(--r); box-shadow: var(--shadow); padding: 22px; }
+  .shell { background: var(--soft2); border-radius: var(--r-lg); padding: 8px; }
+
+  /* Audio player */
+  .player { display: flex; align-items: center; gap: 12px; }
+  .player .pp { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center;
+                background: var(--fg); color: #fff; transition: background .2s, transform .15s; }
+  .player .pp:hover { transform: scale(1.06); }
+  .player.playing .pp { background: var(--accent); }
+  .player .pp svg { width: 16px; height: 16px; }
+  .player .pp .i-pause, .player.playing .pp .i-play { display: none; }
+  .player.playing .pp .i-pause { display: block; }
+  .player canvas { flex: 1; min-width: 0; height: 40px; cursor: pointer; border-radius: 4px; }
+  .player .t { flex: none; font: 12px/1 var(--mono); color: var(--muted); min-width: 34px; text-align: right; }
+  .player.small .pp { width: 38px; height: 38px; }
+  .player.small canvas { height: 32px; }
+
+  /* Clone demo */
+  .clone { display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: stretch; }
+  .clone .card { display: flex; flex-direction: column; gap: 14px; padding: 26px; }
+  .clone .step { font-size: 13px; font-weight: 500; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }
+  .clone blockquote { margin: 0; color: var(--ink); font-size: 18px; line-height: 1.5; flex: 1; }
+  .clone .meta { font-size: 14px; color: var(--muted); }
+  .clone .to { display: grid; place-items: center; }
+  .clone .to span { width: 48px; height: 48px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center;
+                    box-shadow: 0 6px 18px rgba(251,81,14,.35); }
+
+  /* Voices */
+  .filters { display: inline-flex; gap: 4px; padding: 4px; background: #fff; border: 1px solid var(--line); border-radius: 999px; margin-bottom: 24px; }
+  .filters button { font: 500 14px/1 var(--font); border: 0; background: transparent; color: #555; padding: 10px 18px; border-radius: 999px; cursor: pointer; }
+  .filters button[aria-pressed="true"] { background: var(--fg); color: #fff; }
+  .voices { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .voice { display: flex; flex-direction: column; gap: 16px; padding: 18px; }
+  .voice[hidden] { display: none; }
+  .voice .who { display: flex; align-items: center; gap: 12px; }
+  .voice .av { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-weight: 600; font-size: 18px;
+               background: var(--accent-tint); color: var(--accent); text-transform: uppercase; }
+  .voice .av.m { background: var(--soft2); color: var(--ink); }
+  .voice h3 { font-size: 18px; line-height: 1.2; }
+  .voice .player { margin-top: auto; }
+  .voice p { margin: 2px 0 0; font-size: 14px; color: var(--muted); line-height: 1.35; }
+  .note { font-size: 14px; color: var(--muted); margin: 20px 0 0; }
+  .note a { color: var(--ink); }
+
+  /* Features */
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .feature { display: flex; flex-direction: column; }
+  .feature .card { position: relative; z-index: 1; }
+  .feature .ic { width: 40px; height: 40px; border-radius: 10px; background: var(--soft2); display: grid; place-items: center; margin-bottom: 18px; color: var(--ink); }
+  .feature .ic svg, .benefit .ic svg { width: 20px; height: 20px; }
+  .feature h3 { margin-bottom: 8px; }
+  .feature p { margin: 0; color: var(--muted); font-size: 15px; }
+  .feature .art { height: 170px; margin-top: -24px; }
+  .feature .art svg { width: 100%; height: 100%; display: block; }
+  .benefits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; }
+  .benefit { display: flex; gap: 16px; padding: 22px; }
+  .benefit .ic { flex: none; width: 40px; height: 40px; border-radius: 10px; background: var(--accent-tint); color: var(--accent); display: grid; place-items: center; }
+  .benefit h3 { font-size: 17px; margin-bottom: 4px; }
+  .benefit p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  /* How it works */
+  .how { display: grid; grid-template-columns: 5fr 7fr; gap: 16px; align-items: start; }
+  .steps { display: flex; flex-direction: column; gap: 10px; }
+  .stp { padding: 0; overflow: hidden; }
+  .stp button { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 14px; padding: 18px 20px; cursor: pointer; }
+  .stp button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r); }
+  .stp .n { flex: none; width: 34px; height: 34px; border-radius: 10px; background: var(--soft2); display: grid; place-items: center;
+            font-weight: 600; font-size: 14px; color: var(--ink); transition: background .2s, color .2s; }
+  .stp h3 { font-size: 17px; }
+  .stp .body { display: none; padding: 0 20px 20px 68px; color: var(--muted); font-size: 15px; }
+  .stp.open .body { display: block; }
+  .stp.open .n { background: var(--accent); color: #fff; }
+  .code { background: var(--dark); border-radius: var(--r-lg); color: #e9ece9; overflow: hidden; position: sticky; top: 104px; }
+  .code .bar { display: flex; align-items: center; gap: 8px; padding: 14px 16px 14px 20px; border-bottom: 1px solid var(--dark-line); }
+  .code .dots { display: flex; gap: 6px; }
+  .code .dots i { width: 10px; height: 10px; border-radius: 50%; background: #3a403b; }
+  .code .file { font: 13px/1 var(--mono); color: var(--dark-muted); margin-left: 8px; }
+  .code .copy { margin-left: auto; font: 500 12px/1 var(--font); letter-spacing: .04em; text-transform: uppercase; color: #fff;
+                background: #2a2f2b; border: 1px solid var(--dark-line); border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+  .code .copy:hover { background: #343a35; }
+  .code pre { margin: 0; padding: 22px 24px 26px; font: 14px/1.7 var(--mono); overflow-x: auto; min-height: 220px; }
+  .code .c { color: #7d857f; }
+  .code .s { color: var(--accent-light); }
+  .code .k { color: #9fd8b4; }
+
+  /* Performance */
+  .perf { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .perf .shell { display: flex; flex-direction: column; }
+  .perf .card { padding: 24px; }
+  .perf .lbl { font-size: 17px; font-weight: 500; color: var(--ink); }
+  .perf .big { font-size: 52px; font-weight: 500; letter-spacing: -.03em; line-height: 1.1; margin: 10px 0 2px; }
+  .perf .big small { font-size: 16px; color: var(--muted); font-weight: 400; letter-spacing: 0; }
+  .perf .card p { margin: 0; color: var(--muted); font-size: 14px; }
+  .perf ul { list-style: none; margin: 0; padding: 20px 18px 18px; display: flex; flex-direction: column; gap: 12px; font-size: 15px; color: #444; }
+  .perf li { display: flex; gap: 10px; align-items: baseline; }
+  .perf li::before { content: ""; flex: none; width: 10px; height: 6px; border-left: 2px solid var(--accent); border-bottom: 2px solid var(--accent);
+                     transform: translateY(-3px) rotate(-45deg); }
+  .perf .darkc { background: var(--dark); color: #fff; border-radius: var(--r-lg); padding: 8px; display: flex; flex-direction: column; }
+  .perf .darkc .card { background: #232724; box-shadow: none; border: 1px solid var(--dark-line); }
+  .perf .darkc .lbl, .perf .darkc .big { color: #fff; }
+  .perf .darkc .card p { color: var(--dark-muted); }
+  .perf .darkc ul { color: #d5d9d6; }
+  .perf .darkc .btn { margin-top: 18px; width: 100%; justify-content: center; }
+
+  /* FAQ */
+  .faq { display: grid; grid-template-columns: 5fr 7fr; gap: 24px 64px; align-items: start; }
+  .faq .intro p { color: var(--muted); font-size: 17px; margin: 18px 0 0; max-width: 420px; }
+  .faq .list { display: flex; flex-direction: column; gap: 10px; }
+  .faq details { background: #fff; border-radius: var(--r); box-shadow: var(--shadow); }
+  .faq summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 22px;
+                 cursor: pointer; font-size: 17px; font-weight: 500; color: var(--ink); }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary .pm { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid #8a8a8a; position: relative; }
+  .faq summary .pm::before, .faq summary .pm::after { content: ""; position: absolute; left: 50%; top: 50%; width: 10px; height: 1.5px;
+                 background: #6a6a6a; transform: translate(-50%, -50%); }
+  .faq summary .pm::after { transform: translate(-50%, -50%) rotate(90deg); transition: transform .2s; }
+  .faq details[open] summary .pm::after { transform: translate(-50%, -50%) rotate(0deg); }
+  .faq details p { margin: 0; padding: 0 22px 22px; color: var(--muted); font-size: 15px; }
+
+  /* Closing banner */
+  .banner { position: relative; border-radius: var(--r-lg); overflow: hidden; min-height: 440px; display: grid; align-items: center;
+            background: var(--soft2); margin-top: 96px; }
+  .banner > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .banner > img { object-position: 80% 50%; }
+  .banner::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(255,255,255,.92), rgba(255,255,255,.7) 38%, rgba(255,255,255,0) 62%); }
+  .banner .in { position: relative; z-index: 1; padding: 56px; max-width: 620px; }
+  .banner h2 { margin: 0 0 28px; }
+
+  /* Footer */
+  footer { margin: 96px 0 24px; }
+  .foot { background: var(--soft2); border-radius: var(--r-lg); padding: 40px 40px 28px; }
+  .foot-top { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 32px; }
+  .foot-top p { color: var(--muted); font-size: 15px; margin: 14px 0 0; max-width: 340px; }
+  .foot h4 { margin: 0 0 14px; font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .foot ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 15px; }
+  .foot ul a { text-decoration: none; color: var(--ink); }
+  .foot ul a:hover { color: var(--accent); }
+  .foot-bottom { border-top: 1px solid #e2e2e2; margin-top: 40px; padding-top: 22px; display: flex; flex-wrap: wrap; justify-content: space-between;
+                 gap: 8px 24px; font-size: 13px; color: var(--muted); }
+  .foot-bottom a { color: var(--ink); }
+
+  /* Reveal on scroll (only with JS, and not for reduced motion) */
+  .js .reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s ease, transform .7s ease; }
+  .js .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .js .reveal { opacity: 1; transform: none; transition: none; }
+    .btn, .btn-dark .arrow, .player .pp { transition: none; }
+  }
+
+  /* Responsive */
+  @media (max-width: 1080px) {
+    .voices { grid-template-columns: repeat(3, 1fr); }
+    .features, .benefits { grid-template-columns: repeat(2, 1fr); }
+    .perf { grid-template-columns: 1fr 1fr; }
+    .perf .darkc { grid-column: 1 / -1; }
+    .foot-top { grid-template-columns: 1fr 1fr 1fr; }
+    .foot-top > :first-child { grid-column: 1 / -1; }
+  }
+  @media (min-width: 601px) and (max-width: 1080px) {
+    .feature:last-child { grid-column: 1 / -1; }
+  }
+  @media (max-width: 860px) {
+    .nav-links { display: none; }
+    .head, .how, .faq { grid-template-columns: 1fr; }
+    .head p { justify-self: start; }
+    .clone { grid-template-columns: 1fr; }
+    .clone .to span { transform: rotate(90deg); }
+    .voices { grid-template-columns: repeat(2, 1fr); }
+    .stats { grid-template-columns: 1fr 1fr; }
+    .stat:nth-child(3) { border-left: 0; }
+    .stat:nth-child(n+3) { border-top: 1px solid var(--line); }
+    .code { position: static; }
+    .hero-media { aspect-ratio: auto; background: none; overflow: visible; }
+    .hero-media > img { aspect-ratio: 16 / 9; border-radius: var(--r-lg); }
+    .hero-card { position: relative; left: auto; top: auto; width: auto; margin: -48px 16px 0; }
+  }
+  @media (max-width: 600px) {
+    .wrap { padding: 0 16px; }
+    section { padding-top: 72px; }
+    .nav-bar { padding: 8px 8px 8px 14px; }
+    .brand { font-size: 16px; }
+    .brand img { height: 20px; }
+    .nav .btn-orange .lbl-long { display: none; }
+    .hero { padding-top: 48px; }
+    .hero .ctas .btn { width: 100%; justify-content: center; }
+    .hero .ctas .btn-dark { justify-content: space-between; }
+    .hero-card { margin: -32px 8px 0; padding: 16px; }
+    .voices, .features, .benefits, .perf { grid-template-columns: 1fr; }
+    .stat { padding: 22px 18px; }
+    .stp .body { padding-left: 20px; }
+    .foot { padding: 28px 20px 22px; }
+    .foot-top { grid-template-columns: 1fr 1fr; }
+    .banner { min-height: 400px; align-items: end; }
+    .banner::after { background: linear-gradient(0deg, rgba(255,255,255,.95) 45%, rgba(255,255,255,.2)); }
+    .banner .in { padding: 32px 22px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Icons, reused with <use> -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z" fill="currentColor"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1.2" fill="currentColor"/><rect x="14" y="4" width="4" height="16" rx="1.2" fill="currentColor"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0V7ZM12 17v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21a8 8 0 0 1 16 0M19 3l.7 1.6L21.3 5.3l-1.6.7L19 7.6l-.7-1.6-1.6-.7 1.6-.7Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="i-smile" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><path d="M7 7h10v10H7zM10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12h3l2-6 4 12 2-6h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2V5ZM4 20a2 2 0 0 0 2 1h13v-3M8 7h7M8 11h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<div class="nav">
+  <div class="wrap">
+    <nav class="nav-bar" aria-label="Main">
+      <a class="brand" href="#top"><img src="assets/logo.png" alt="" width="44" height="24">open-omnivoice-tts</a>
+      <div class="nav-links">
+        <a href="#voices">Voices</a>
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#performance">Performance</a>
+        <a href="#faq">FAQ</a>
+      </div>
+      <a class="btn btn-orange btn-sm" href="https://github.com/hypersniper05/open-omnivoice-tts"><span><span class="lbl-long">View on </span>GitHub</span></a>
+    </nav>
+  </div>
+</div>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <span class="tag">// Open source &middot; OpenAI-compatible //</span>
+    <h1>A sentence in <em>0.3 seconds.</em></h1>
+    <p class="sub">Any voice, 600+ languages, on your own GPU. A self-hosted text-to-speech server with an OpenAI-compatible
+      API, built on k2&#8209;fsa's OmniVoice.</p>
+    <div class="ctas">
+      <a class="btn btn-dark" href="https://github.com/hypersniper05/open-omnivoice-tts">Get it on GitHub
+        <span class="arrow"><svg width="16" height="16"><use href="#i-arrow"/></svg></span></a>
+      <a class="btn btn-light" href="#voices">Listen to the voices</a>
+    </div>
+
+    <div class="hero-media reveal">
+      <img src="assets/hero.jpg" alt="Glossy orange bars rising like a sound wave from white tiles" width="1680" height="720">
+      <div class="hero-card">
+        <div class="req"><span class="m">POST</span>/v1/audio/speech<span class="ok">200 OK</span></div>
+        <pre>{ "model": "tts-1", "voice": <span class="s">"nova"</span>,
+  "input": <span class="s">"Hi! I am a voice running on your own GPU. Point any OpenAI app at me, and I will speak."</span> }</pre>
+        <div class="player" data-src="samples/hero_nova.mp3" data-label="the nova example"></div>
+      </div>
+    </div>
+
+    <div class="works">
+      <span>Works with any OpenAI client:</span>
+      <b>Open WebUI</b><b>LibreChat</b><b>SillyTavern</b><b>AnythingLLM</b><b>openai SDKs</b>
+    </div>
+
+    <div class="stats reveal" style="text-align:left">
+      <div class="stat"><b>0.34<small>s</small></b><span>to speak a sentence on an RTX 3080</span></div>
+      <div class="stat"><b>25&ndash;30<small>&times;</small></b><span>faster than real time</span></div>
+      <div class="stat"><b>3.4<small>GB</small></b><span>of VRAM at peak</span></div>
+      <div class="stat"><b>600<small>+</small></b><span>languages</span></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="clone">
+    <div class="wrap">
+      <div class="head reveal">
+        <div><span class="tag">// Voice cloning //</span><h2>Clone a voice from one short clip.</h2></div>
+        <p>Play the original, then the clone. The clone says words that were never recorded; everything else about
+          the voice comes from the 15-second original.</p>
+      </div>
+      <div class="clone reveal">
+        <div class="card">
+          <span class="step">1 &middot; The original recording</span>
+          <blockquote>&ldquo;His prospects of success, in pleading for a favorable reception of his brother's message, were so
+            uncertain that he refrained, in fear of raising hopes which he might not be able to justify, from taking
+            Herbert into his confidence.&rdquo;</blockquote>
+          <div class="player" data-src="samples/clone_original.mp3" data-label="the original recording"></div>
+          <span class="meta">A LibriVox reader from LibriTTS-R (CC BY 4.0)</span>
+        </div>
+        <div class="to" aria-hidden="true"><span><svg width="20" height="20"><use href="#i-right"/></svg></span></div>
+        <div class="card">
+          <span class="step">2 &middot; The clone, made by the API</span>
+          <blockquote>&ldquo;This voice was cloned from the recording you just heard. The words are new, but the voice, the pace
+            and the character all come from that one short clip.&rdquo;</blockquote>
+          <div class="player" data-src="samples/clone_api.mp3" data-label="the clone"></div>
+          <span class="meta">Generated by <code>/v1/audio/speech</code> with default settings</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="voices">
+    <div class="wrap">
+      <div class="head reveal">
+        <div><span class="tag">// Voices //</span><h2>Twelve open voices, ready to use.</h2></div>
+        <p>OpenAI's voice names, each cloned from a LibriVox reader in LibriTTS-R. Every sample reads the same text
+          with the default settings.</p>
+      </div>
+      <div class="filters" role="group" aria-label="Filter voices">
+        <button type="button" data-filter="all" aria-pressed="true">All</button>
+        <button type="button" data-filter="female" aria-pressed="false">Female</button>
+        <button type="button" data-filter="male" aria-pressed="false">Male</button>
+      </div>
+      <div class="voices" id="voice-grid"></div>
+      <p class="note"><code>fable</code> uses the <code>ballad</code> voice. Point any name at your own clip in
+        <code>app/openai_voices.json</code>. Credits:
+        <a href="https://github.com/hypersniper05/open-omnivoice-tts/blob/main/Voices/ATTRIBUTION.md">Voices/ATTRIBUTION.md</a>.</p>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="head reveal">
+        <div><span class="tag">// Key features //</span><h2>Built for your stack.<br>Runs on your GPU.</h2></div>
+        <p>Everything an OpenAI client expects from a speech API, with voice cloning on top, running on hardware
+          you control. No account, no per-character fees, and your text never leaves your machine.</p>
+      </div>
+      <div class="features">
+        <div class="feature shell reveal">
+          <div class="card">
+            <div class="ic"><svg><use href="#i-plug"/></svg></div>
+            <h3>OpenAI-compatible API</h3>
+            <p><code>/v1/audio/speech</code> with every OpenAI output format, <code>speed</code>, and all 13 OpenAI voice
+              names. Errors follow OpenAI's format.</p>
+          </div>
+          <div class="art" data-art="ribbon"></div>
+        </div>
+        <div class="feature shell reveal">
+          <div class="card">
+            <div class="ic"><svg><use href="#i-copy"/></svg></div>
+            <h3>Voice cloning in seconds</h3>
+            <p>Drop a 3 to 20 second clip in <code>Voices/</code> and use its name as the voice. Add a transcript for an
+              even better clone.</p>
+          </div>
+          <div class="art" data-art="fan"></div>
+        </div>
+        <div class="feature shell reveal">
+          <div class="card">
+            <div class="ic"><svg><use href="#i-user"/></svg></div>
+            <h3>OpenAI's custom voice API</h3>
+            <p>Create voices from an audio sample with a consent recording, or from a description such as
+              <em>female, british accent</em>.</p>
+          </div>
+          <div class="art" data-art="rings"></div>
+        </div>
+      </div>
+      <div class="benefits">
+        <div class="benefit card reveal"><div class="ic"><svg><use href="#i-sliders"/></svg></div>
+          <div><h3>Voice design</h3><p>Describe a voice instead of cloning one: <code>design:female, middle-aged</code>.</p></div></div>
+        <div class="benefit card reveal"><div class="ic"><svg><use href="#i-globe"/></svg></div>
+          <div><h3>600+ languages</h3><p>OmniVoice speaks over 600 languages, with any voice.</p></div></div>
+        <div class="benefit card reveal"><div class="ic"><svg><use href="#i-smile"/></svg></div>
+          <div><h3>Expressive tags</h3><p>Write <code>[laughter]</code> or <code>[sigh]</code> in the text and hear it.</p></div></div>
+        <div class="benefit card reveal"><div class="ic"><svg><use href="#i-chip"/></svg></div>
+          <div><h3>Small footprint</h3><p>About 3.4 GB of VRAM at peak. Unloads after 10 idle minutes.</p></div></div>
+        <div class="benefit card reveal"><div class="ic"><svg><use href="#i-share"/></svg></div>
+          <div><h3>Plays well with others</h3><p>Caps its GPU memory, queues requests and recovers from out-of-memory errors.</p></div></div>
+        <div class="benefit card reveal"><div class="ic"><svg><use href="#i-book"/></svg></div>
+          <div><h3>Interactive API docs</h3><p>Try every endpoint at <code>/docs</code>, described in OpenAPI 3.1.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <div class="head reveal">
+        <div><span class="tag">// How it works //</span><h2>From clone to speech<br>in four steps.</h2></div>
+        <p>You need Docker and an NVIDIA GPU with 4 GB of free VRAM. The start script does the rest.</p>
+      </div>
+      <div class="how reveal">
+        <div class="steps" id="steps"></div>
+        <div class="code" aria-live="polite">
+          <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="file" id="code-file"></span>
+            <button class="copy" type="button" id="copy">Copy</button></div>
+          <pre id="code-body"></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="performance">
+    <div class="wrap">
+      <div class="head reveal">
+        <div><span class="tag">// Performance //</span><h2>Fast on a GPU.<br>Possible on a CPU.</h2></div>
+        <p>Measured on an RTX 3080 with the default 16 steps. A sentence is about 4.6 seconds of speech, a paragraph
+          about 32 seconds.</p>
+      </div>
+      <div class="perf">
+        <div class="shell reveal">
+          <div class="card"><div class="lbl">One sentence</div><div class="big">0.34 s <small>on the GPU</small></div>
+            <p>Time to the complete audio file</p></div>
+          <ul><li>About 4.6 s of speech</li><li>With voice design: 0.23 s</li><li>On 4 CPU cores: 62 s</li></ul>
+        </div>
+        <div class="shell reveal">
+          <div class="card"><div class="lbl">One paragraph</div><div class="big">1.4 s <small>on the GPU</small></div>
+            <p>Time to the complete audio file</p></div>
+          <ul><li>About 32 s of speech</li><li>On 4 CPU cores: 183 s</li><li>A new voice is prepared once: 6 s with a transcript, 14 s without</li></ul>
+        </div>
+        <div class="darkc reveal">
+          <div class="card"><div class="lbl">What you need</div><div class="big">4 GB <small>of free VRAM</small></div>
+            <p>NVIDIA GPU, driver 580 or newer</p>
+            <a class="btn btn-light" href="#how">See the quick start</a></div>
+          <ul><li>Docker Desktop (Windows), or Docker Engine with the NVIDIA Container Toolkit (Linux)</li>
+            <li>16 GB of RAM</li><li>About 40 GB of free disk for the first start</li>
+            <li>CPU mode works too, more than 100 times slower</li></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap faq">
+      <div class="intro reveal">
+        <span class="tag">// FAQ //</span>
+        <h2>Questions, answered.</h2>
+        <p>Something else? Open an issue on
+          <a href="https://github.com/hypersniper05/open-omnivoice-tts/issues">GitHub</a>.</p>
+      </div>
+      <div class="list reveal">
+        <details open><summary>Can I use it commercially?<span class="pm"></span></summary>
+          <p>The code in this repository is MIT licensed, but the OmniVoice model is licensed CC BY-NC: non-commercial
+            use only. Read the model's license before you use speech made with it commercially.</p></details>
+        <details><summary>Does my text leave my computer?<span class="pm"></span></summary>
+          <p>No. Text and audio are processed on your machine. The only downloads are the models, from Hugging Face,
+            the first time they are needed.</p></details>
+        <details><summary>Which apps can use it?<span class="pm"></span></summary>
+          <p>Any app that supports OpenAI text to speech: Open WebUI, LibreChat, SillyTavern, AnythingLLM and the
+            <code>openai</code> SDKs. Set the base URL to <code>http://&lt;host&gt;:8008/v1</code> and the model to
+            <code>tts-1</code>.</p></details>
+        <details><summary>Which GPUs work?<span class="pm"></span></summary>
+          <p>NVIDIA GPUs with 4 GB of free VRAM. The start script builds the kernels for your card's architecture.
+            RTX 30-series cards are tested.</p></details>
+        <details><summary>Can I clone my own voice?<span class="pm"></span></summary>
+          <p>Yes. Put a 3 to 20 second clip of one speaker in <code>Voices/</code>, with what it says in a
+            <code>.txt</code> file next to it, and use the file name as the voice. Only clone voices you have the
+            right to use.</p></details>
+        <details><summary>Does it stream audio?<span class="pm"></span></summary>
+          <p>Each request returns a complete audio file, in about a third of a second for a sentence on a GPU.
+            <code>stream_format: "sse"</code> is not supported.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <div class="banner reveal">
+      <img src="assets/banner.jpg" alt="" width="1680" height="720" loading="lazy">
+      <div class="in">
+        <span class="tag">// Free and open source //</span>
+        <h2>Give your apps a voice, on your own GPU.</h2>
+        <a class="btn btn-dark" href="https://github.com/hypersniper05/open-omnivoice-tts">Get it on GitHub
+          <span class="arrow"><svg width="16" height="16"><use href="#i-arrow"/></svg></span></a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div class="foot-top">
+        <div>
+          <a class="brand" href="#top"><img src="assets/logo.png" alt="" width="44" height="24">open-omnivoice-tts</a>
+          <p>A self-hosted, OpenAI-compatible text-to-speech server built on OmniVoice.</p>
+        </div>
+        <div><h4>Project</h4><ul>
+          <li><a href="https://github.com/hypersniper05/open-omnivoice-tts">GitHub</a></li>
+          <li><a href="https://github.com/hypersniper05/open-omnivoice-tts#readme">README</a></li>
+          <li><a href="https://github.com/hypersniper05/open-omnivoice-tts/issues">Issues</a></li></ul></div>
+        <div><h4>Built on</h4><ul>
+          <li><a href="https://github.com/k2-fsa/OmniVoice">OmniVoice</a></li>
+          <li><a href="https://huggingface.co/k2-fsa/OmniVoice">The model</a></li>
+          <li><a href="https://www.openslr.org/141/">LibriTTS-R</a></li></ul></div>
+        <div><h4>Licenses</h4><ul>
+          <li><a href="https://github.com/hypersniper05/open-omnivoice-tts/blob/main/LICENSE">Code: MIT</a></li>
+          <li><a href="https://huggingface.co/k2-fsa/OmniVoice">Model: CC BY-NC</a></li>
+          <li><a href="https://github.com/hypersniper05/open-omnivoice-tts/blob/main/Voices/ATTRIBUTION.md">Voices: CC BY 4.0</a></li></ul></div>
+      </div>
+      <div class="foot-bottom">
+        <span>&copy; 2026 hypersniper. Code MIT licensed.</span>
+        <span>The OmniVoice model is for non-commercial use only.</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(() => {
+  "use strict";
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- Voices ---------- */
+  const VOICES = [
+    ["alloy", "female", "Mid-range"], ["coral", "female", "Warm and expressive"],
+    ["marin", "female", "Natural, conversational"], ["nova", "female", "Young and bright"],
+    ["sage", "female", "Middle-aged and calm"], ["shimmer", "female", "Soft, higher voice"],
+    ["ash", "male", "Young"], ["ballad", "male", "Soft and unhurried"],
+    ["cedar", "male", "Natural and deep"], ["echo", "male", "Mid-range"],
+    ["onyx", "male", "Deep and authoritative"], ["verse", "male", "Light and expressive"],
+  ];
+  const grid = document.getElementById("voice-grid");
+  for (const [name, gender, character] of VOICES) {
+    const card = document.createElement("article");
+    card.className = "card voice reveal";
+    card.dataset.gender = gender;
+    card.innerHTML =
+      `<div class="who"><div class="av${gender === "male" ? " m" : ""}" aria-hidden="true">${name[0]}</div>` +
+      `<div><h3>${name}</h3><p>${gender === "male" ? "Male" : "Female"} &middot; ${character.toLowerCase()}</p></div></div>` +
+      `<div class="player small" data-src="samples/${name}.mp3" data-label="the ${name} voice"></div>`;
+    grid.appendChild(card);
+  }
+  for (const b of document.querySelectorAll(".filters button")) {
+    b.addEventListener("click", () => {
+      for (const o of document.querySelectorAll(".filters button")) o.setAttribute("aria-pressed", String(o === b));
+      for (const c of grid.children) c.hidden = b.dataset.filter !== "all" && c.dataset.gender !== b.dataset.filter;
+    });
+  }
+
+  /* ---------- Audio players with real waveforms ---------- */
+  const BUCKETS = 240;
+  const peaksCache = new Map();
+  let current = null;
+
+  function seeded(name) {  // fallback shape when the audio cannot be decoded
+    let h = 2166136261;
+    for (const ch of name) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    return Array.from({ length: BUCKETS }, (_, i) => {
+      h = Math.imul(h ^ (h >>> 13), 1274126177);
+      const env = Math.sin(Math.PI * (i + 4) / (BUCKETS + 8));
+      return (0.25 + 0.75 * ((h >>> 0) / 4294967295)) * (0.35 + 0.65 * env);
+    });
+  }
+
+  async function peaks(src) {
+    if (!peaksCache.has(src)) {
+      peaksCache.set(src, (async () => {
+        const buf = await (await fetch(src)).arrayBuffer();
+        const ctx = new OfflineAudioContext(1, 1, 24000);
+        const audio = await ctx.decodeAudioData(buf);
+        const data = audio.getChannelData(0), step = data.length / BUCKETS, out = [];
+        for (let b = 0; b < BUCKETS; b++) {
+          let sum = 0, n = 0;
+          for (let i = Math.floor(b * step); i < Math.floor((b + 1) * step); i++) { sum += data[i] * data[i]; n++; }
+          out.push(Math.sqrt(sum / Math.max(n, 1)));
+        }
+        const max = Math.max(...out, 1e-6);
+        return { values: out.map(v => Math.pow(v / max, 0.7)), duration: audio.duration };
+      })().catch(() => ({ values: seeded(src), duration: 0 })));
+    }
+    return peaksCache.get(src);
+  }
+
+  const fmt = s => !isFinite(s) || s <= 0 ? "0:00" : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+  function makePlayer(el) {
+    const src = el.dataset.src;
+    el.innerHTML =
+      `<button class="pp" type="button" aria-label="Play ${el.dataset.label || "sample"}">` +
+      `<svg class="i-play"><use href="#i-play"/></svg><svg class="i-pause"><use href="#i-pause"/></svg></button>` +
+      `<canvas role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></canvas>` +
+      `<span class="t">0:00</span>`;
+    const btn = el.querySelector(".pp"), canvas = el.querySelector("canvas"), time = el.querySelector(".t");
+    let audio = null, values = null, duration = 0, raf = 0;
+
+    const draw = () => {
+      const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+      if (!w || !h) return;
+      if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+      const g = canvas.getContext("2d"), cs = getComputedStyle(el);
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, w, h);
+      const v = values || seeded(src).map(x => x * 0.25);
+      const bar = 3, gap = 2, n = Math.max(8, Math.floor((w + gap) / (bar + gap)));
+      const progress = audio && audio.duration ? audio.currentTime / audio.duration : 0;
+      for (let i = 0; i < n; i++) {
+        const a = v[Math.min(v.length - 1, Math.floor(i * v.length / n))];
+        const bh = Math.max(3, a * (h - 4));
+        g.fillStyle = (i + 0.5) / n <= progress ? cs.getPropertyValue("--wave-played") : cs.getPropertyValue("--wave");
+        const x = i * (bar + gap), y = (h - bh) / 2;
+        g.beginPath();
+        if (g.roundRect) g.roundRect(x, y, bar, bh, 1.5); else g.rect(x, y, bar, bh);
+        g.fill();
+      }
+      canvas.setAttribute("aria-valuenow", String(Math.round(progress * 100)));
+    };
+
+    const tick = () => {
+      draw();
+      if (audio) time.textContent = fmt(audio.paused && audio.currentTime === 0 ? (audio.duration || duration) : audio.currentTime);
+      if (audio && !audio.paused) raf = requestAnimationFrame(tick);
+    };
+
+    const ensureAudio = () => {
+      if (audio) return audio;
+      audio = new Audio(src);
+      audio.preload = "auto";
+      audio.addEventListener("play", () => {
+        if (current && current !== audio) current.pause();
+        current = audio; el.classList.add("playing"); btn.setAttribute("aria-label", "Pause"); cancelAnimationFrame(raf); tick();
+      });
+      audio.addEventListener("pause", () => { el.classList.remove("playing"); btn.setAttribute("aria-label", `Play ${el.dataset.label || "sample"}`); tick(); });
+      audio.addEventListener("ended", () => { audio.currentTime = 0; tick(); });
+      audio.addEventListener("loadedmetadata", tick);
+      return audio;
+    };
+
+    const seek = frac => {
+      const a = ensureAudio();
+      const go = () => { a.currentTime = Math.max(0, Math.min(1, frac)) * a.duration; tick(); };
+      if (a.duration) go(); else a.addEventListener("loadedmetadata", go, { once: true });
+    };
+
+    btn.addEventListener("click", () => { const a = ensureAudio(); a.paused ? a.play() : a.pause(); });
+    canvas.addEventListener("click", e => { const r = canvas.getBoundingClientRect(); seek((e.clientX - r.left) / r.width); if (audio && audio.paused) audio.play(); });
+    canvas.addEventListener("keydown", e => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      e.preventDefault();
+      const a = ensureAudio(), p = a.duration ? a.currentTime / a.duration : 0;
+      seek(p + (e.key === "ArrowRight" ? 0.05 : -0.05));
+    });
+
+    new ResizeObserver(draw).observe(canvas);
+    el._load = () => peaks(src).then(p => { values = p.values; duration = p.duration; if (!audio || audio.paused) time.textContent = fmt(duration); draw(); });
+  }
+
+  const players = [...document.querySelectorAll(".player")];
+  players.forEach(makePlayer);
+  const loadObs = new IntersectionObserver(entries => {
+    for (const e of entries) if (e.isIntersecting) { e.target._load(); loadObs.unobserve(e.target); }
+  }, { rootMargin: "300px" });
+  players.forEach(p => loadObs.observe(p));
+
+  /* ---------- Line art for the feature cards ---------- */
+  const W = 400, H = 170, ORANGE = "#fb510e";
+  const path = pts => "M" + pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join("L");
+  const ART = {
+    ribbon() {  // a twisting band of sine waves, like a sound wave seen in 3D
+      let s = "";
+      for (let i = 0; i <= 44; i++) {
+        const t = i / 44, pts = [];
+        for (let x = -10; x <= W + 10; x += 8) {
+          const amp = 52 * Math.cos(Math.PI * t + x / 150);
+          pts.push([x, 92 + amp * Math.sin(x / 62 + t * 2.2) + (t - 0.5) * 30]);
+        }
+        s += `<path d="${path(pts)}"/>`;
+      }
+      return s;
+    },
+    fan() {  // curves fanning out from one point: one voice into many
+      let s = "";
+      for (let i = 0; i <= 46; i++) {
+        const t = i / 46;
+        s += `<path d="M-10 ${H + 6} C ${110 + t * 60} ${H - 20 - t * 70}, ${220 - t * 40} ${30 + t * 120}, ${W + 10} ${12 + t * 150}"/>`;
+      }
+      return s;
+    },
+    rings() {  // rotated ellipses forming a soft vortex
+      let s = "";
+      for (let i = 0; i <= 40; i++) {
+        const t = i / 40;
+        s += `<ellipse cx="${200 + 30 * Math.sin(t * 6)}" cy="${95 + 10 * t}" rx="${170 - 70 * t}" ry="${26 + 34 * t}" transform="rotate(${-14 + 22 * t} 200 95)"/>`;
+      }
+      return s;
+    },
+  };
+  for (const el of document.querySelectorAll("[data-art]")) {
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">` +
+      `<g fill="none" stroke="${ORANGE}" stroke-width=".8" stroke-opacity=".75">${ART[el.dataset.art]()}</g></svg>`;
+  }
+
+  /* ---------- How it works: steps and code ---------- */
+  const STEPS = [
+    { title: "Install and start", file: "terminal",
+      text: "Clone the repository and run the start script. It builds the image for your GPU, downloads the model (about 3 GB) and prints the address when the server is ready.",
+      code: `git clone --recursive https://github.com/hypersniper05/open-omnivoice-tts.git
+cd open-omnivoice-tts
+
+./start.sh        # Linux
+start.cmd         # Windows (or double-click it)
+
+# Ready after 95 s. OpenAI-compatible API (no API key):
+#     base URL   http://localhost:8008/v1
+#     API docs   http://localhost:8008/docs` },
+    { title: "Make it speak", file: "terminal",
+      text: "Send OpenAI's speech request. Any of the 13 OpenAI voice names works, or the name of your own clip.",
+      code: `curl http://localhost:8008/v1/audio/speech \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "tts-1", "voice": "nova", "input": "Hello!"}' \\
+  --output hello.mp3` },
+    { title: "Connect your apps", file: "speak.py",
+      text: "Use the openai SDK, or any app with OpenAI text to speech: base URL http://<host>:8008/v1, any API key, model tts-1.",
+      code: `from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8008/v1", api_key="not-needed")
+
+client.audio.speech.create(
+    model="tts-1", voice="nova", input="Hello!"
+).write_to_file("hello.mp3")` },
+    { title: "Add your own voice", file: "my_voice.py",
+      text: "Put a 3 to 20 second clip in Voices/ with its transcript next to it, and use the file name as the voice. Or describe a voice with OpenAI's voice API.",
+      code: `# Voices/narrator.wav and Voices/narrator.txt (what the clip says)
+client.audio.speech.create(
+    model="tts-1", voice="narrator", input="Hello!"
+).write_to_file("hello.mp3")
+
+# Or describe a voice (turn on allow_custom_voices first)
+voice = client.audio.voices.create(
+    type="prompt", name="Narrator",
+    prompt="female, middle-aged, low pitch, british accent")` },
+  ];
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const highlight = code => code.split("\n").map(line => {
+    const hash = line.search(/(^|\s)#/);
+    const body = hash >= 0 ? line.slice(0, hash) : line, comment = hash >= 0 ? line.slice(hash) : "";
+    let html = esc(body)
+      .replace(/(&quot;|")(.*?)\1|'(.*?)'/g, m => `<span class="s">${m}</span>`)
+      .replace(/\b(from|import|def|return)\b/g, `<span class="k">$1</span>`);
+    return html + (comment ? `<span class="c">${esc(comment)}</span>` : "");
+  }).join("\n");
+
+  const stepsEl = document.getElementById("steps"), codeBody = document.getElementById("code-body"), codeFile = document.getElementById("code-file");
+  let active = 0;
+  STEPS.forEach((s, i) => {
+    const item = document.createElement("div");
+    item.className = "card stp";
+    item.innerHTML = `<button type="button" aria-expanded="false"><span class="n">${i + 1}</span><h3>${s.title}</h3></button><div class="body">${esc(s.text)}</div>`;
+    item.querySelector("button").addEventListener("click", () => show(i));
+    stepsEl.appendChild(item);
+  });
+  function show(i) {
+    active = i;
+    [...stepsEl.children].forEach((c, j) => { c.classList.toggle("open", j === i); c.querySelector("button").setAttribute("aria-expanded", String(j === i)); });
+    codeFile.textContent = STEPS[i].file;
+    codeBody.innerHTML = highlight(STEPS[i].code);
+  }
+  show(0);
+  const copyBtn = document.getElementById("copy");
+  copyBtn.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(STEPS[active].code); copyBtn.textContent = "Copied"; }
+    catch { copyBtn.textContent = "Select and copy"; }
+    setTimeout(() => (copyBtn.textContent = "Copy"), 1600);
+  });
+
+  /* ---------- Reveal on scroll ---------- */
+  const revealEls = document.querySelectorAll(".reveal");
+  if (reduceMotion || !("IntersectionObserver" in window)) revealEls.forEach(e => e.classList.add("in"));
+  else {
+    const ro = new IntersectionObserver(entries => {
+      for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); ro.unobserve(e.target); }
+    }, { rootMargin: "0px 0px -8% 0px" });
+    revealEls.forEach(e => ro.observe(e));
+  }
+})();
+</script>
+</body>
+</html>

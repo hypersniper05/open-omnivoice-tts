@@ -1,6 +1,17 @@
-# OPEN-OMNIVOICE-TTS
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-full-dark.png">
+    <img src="docs/assets/logo-full.png" alt="open-omnivoice-tts logo" width="180">
+  </picture>
+</p>
 
-### A sentence in 0.3 seconds. Any voice, 600+ languages, on your own GPU.
+<h1 align="center">OPEN-OMNIVOICE-TTS</h1>
+
+<h3 align="center">A sentence in 0.3 seconds. Any voice, 600+ languages, on your own GPU.</h3>
+
+<p align="center">
+  <a href="https://hypersniper05.github.io/open-omnivoice-tts/"><img src="docs/assets/readme-banner.webp" alt="Hear every voice in your browser: visit the project page" width="100%"></a>
+</p>
 
 A self-hosted text-to-speech server with an **OpenAI-compatible API**, built on
 [OmniVoice](https://github.com/k2-fsa/OmniVoice), k2-fsa's zero-shot voice cloning model for 600+ languages. It
@@ -14,6 +25,9 @@ AnythingLLM, or the `openai` SDKs.
 - **Interactive API docs** at `/docs`
 
 ## Examples
+
+GitHub cannot play audio in a README: click a file to download it, or listen to all of them on the
+[project page](https://hypersniper05.github.io/open-omnivoice-tts/).
 
 **Cloning.** Listen to the original, then the clone. The clone says words that were never recorded; everything
 else about the voice comes from the 15-second original.
