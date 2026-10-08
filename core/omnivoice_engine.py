@@ -78,9 +78,10 @@ FI_OVERHEAD = int(os.environ.get("OMNIVOICE_FI_OVERHEAD") or 1024)
 MEM_FRACTION = float(os.environ.get("OMNIVOICE_MEM_FRACTION") or 0)
 VRAM_CAP_MIB = float(os.environ.get("OMNIVOICE_VRAM_CAP_MIB") or 0)
 ASR_THREADS = int(os.environ.get("OMNIVOICE_ASR_THREADS") or 8)
-# Model precision: "" = float16 on a GPU, float32 on the CPU; or float16 / float32 /
-# bfloat16. float32 takes twice the VRAM. FlashInfer needs float16 and is skipped
-# with any other precision.
+# Model precision: "" = automatic (float16 on GPUs with tensor cores, float32 on
+# older GPUs, the GTX 16-series and the CPU), or float16 / float32 / bfloat16.
+# float32 takes twice the VRAM. FlashInfer needs float16 and is skipped with any
+# other precision.
 DTYPE = (os.environ.get("OMNIVOICE_DTYPE") or "").strip().lower()
 
 
@@ -110,11 +111,26 @@ class GPUMemoryError(RuntimeError):
 
 def _is_oom(e: BaseException) -> bool:
     """torch.OutOfMemoryError, or a RuntimeError that is an OOM in disguise:
-    under WSL2 the driver can surface one as "device not ready"."""
+    under WSL2 the driver can surface one as "device not ready", and on a full
+    4 GB card expandable segments failed with "!handles_.at(i) INTERNAL ASSERT
+    FAILED ... CUDACachingAllocator.cpp" (the next request worked again)."""
     if type(e).__name__ == "OutOfMemoryError":
         return True
     msg = str(e).lower()
-    return isinstance(e, RuntimeError) and ("out of memory" in msg or "device not ready" in msg)
+    return isinstance(e, RuntimeError) and (
+        "out of memory" in msg or "device not ready" in msg
+        or ("internal assert failed" in msg and "cudacachingallocator" in msg))
+
+
+def _no_tensor_cores(name: str, capability: tuple[int, int]) -> bool:
+    """GPUs without tensor cores: everything before Volta (7.0), and the Turing
+    parts that report 7.5 like the RTX 20-series but lack them (GTX 16-series,
+    MX 450/550, T400-T2000). Libraries take tensor-core paths for float16 there,
+    which run slowly: on a GTX 1650 a sentence took 44.6 s in float16 and 16.3 s
+    in float32, with the card at 20 of 75 W."""
+    if capability < (7, 0):
+        return True
+    return capability == (7, 5) and bool(re.search(r"GTX 16|\bMX ?[45]\d0\b|\bT(400|500|550|600|1000|1200|2000)\b", name))
 
 
 def _sentence_units(text: str) -> Optional[str]:
@@ -456,6 +472,12 @@ class OmniVoiceEngine:
                 dtype = named[DTYPE]
             else:
                 logger.warning("OMNIVOICE_DTYPE=%r is not float16, float32 or bfloat16; using %s.", DTYPE, dtype)
+        elif str(self.device).startswith("cuda"):
+            props = torch.cuda.get_device_properties(self.device)
+            if _no_tensor_cores(props.name, (props.major, props.minor)):
+                dtype = torch.float32
+                logger.info("%s has no tensor cores: running in float32, which is faster there "
+                            "than float16 (OMNIVOICE_DTYPE overrides this).", props.name)
         if str(self.device).startswith("cuda"):
             _refuse_second_instance()
         if str(self.device).startswith("cuda") and (MEM_FRACTION > 0 or VRAM_CAP_MIB > 0):
