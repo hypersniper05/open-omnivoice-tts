@@ -52,6 +52,9 @@ services:
       # other (FlashInfer + compile needs a compiler the image does not have).
       - OMNIVOICE_FLASHINFER=1
       - OMNIVOICE_COMPILE=
+      # Model precision (empty = float16 on a GPU): float32 or bfloat16. FlashInfer
+      # needs float16 and is skipped with any other precision.
+      - OMNIVOICE_DTYPE=${OMNIVOICE_DTYPE:-}
       # Whisper (transcribes voices that have no transcript) runs on the CPU.
       - OMNIVOICE_ASR_DEVICE=cpu
       # Request limits: longer input gets a 413; more waiting requests get a 429.

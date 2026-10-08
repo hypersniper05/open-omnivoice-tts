@@ -78,6 +78,10 @@ FI_OVERHEAD = int(os.environ.get("OMNIVOICE_FI_OVERHEAD") or 1024)
 MEM_FRACTION = float(os.environ.get("OMNIVOICE_MEM_FRACTION") or 0)
 VRAM_CAP_MIB = float(os.environ.get("OMNIVOICE_VRAM_CAP_MIB") or 0)
 ASR_THREADS = int(os.environ.get("OMNIVOICE_ASR_THREADS") or 8)
+# Model precision: "" = float16 on a GPU, float32 on the CPU; or float16 / float32 /
+# bfloat16. float32 takes twice the VRAM. FlashInfer needs float16 and is skipped
+# with any other precision.
+DTYPE = (os.environ.get("OMNIVOICE_DTYPE") or "").strip().lower()
 
 
 from core.prompt_worker import FasterWhisperASR as _FasterWhisperASR  # noqa: E402
@@ -424,6 +428,7 @@ class OmniVoiceEngine:
         self._prompt_cache: dict[str, Any] = {}
         self._cpu_tokenizer = None  # see _build_prompt
         self._prompt_pool = None    # out-of-process prompt builder, see _build_prompt_in_worker
+        self.flashinfer_on = False  # set by _build_model
         self._voice_meta, self._voice_meta_mtime = {}, -1.0   # loaded by _fresh_voice_meta
         # Idle offload: free the model from VRAM after this many seconds with no
         # generation, and reload it on demand. 0 / None disables it. The server
@@ -444,6 +449,13 @@ class OmniVoiceEngine:
 
         self.device = _pick_device(self.device)
         dtype = torch.float16 if str(self.device).startswith(("cuda", "xpu")) else torch.float32
+        if DTYPE:
+            named = {"float16": torch.float16, "fp16": torch.float16, "float32": torch.float32,
+                     "fp32": torch.float32, "bfloat16": torch.bfloat16, "bf16": torch.bfloat16}
+            if DTYPE in named:
+                dtype = named[DTYPE]
+            else:
+                logger.warning("OMNIVOICE_DTYPE=%r is not float16, float32 or bfloat16; using %s.", DTYPE, dtype)
         if str(self.device).startswith("cuda"):
             _refuse_second_instance()
         if str(self.device).startswith("cuda") and (MEM_FRACTION > 0 or VRAM_CAP_MIB > 0):
@@ -465,11 +477,15 @@ class OmniVoiceEngine:
             dtype=dtype,
             asr_device=ASR_DEVICE,  # for the transformers fallback, see _ensure_asr
         )
-        if FLASHINFER and str(self.device).startswith("cuda"):
+        self.flashinfer_on = False
+        if FLASHINFER and str(self.device).startswith("cuda") and dtype != torch.float16:
+            logger.info("FlashInfer skipped: it needs float16, the model runs in %s.", dtype)
+        elif FLASHINFER and str(self.device).startswith("cuda"):
             from omnivoice.models.omnivoice_flashinfer import apply_flashinfer
             fi_kw = (dict(cuda_graph_buckets=FI_BUCKETS, overhead_budget=FI_OVERHEAD)
                      if FLASHINFER == "graphs" else {})
             apply_flashinfer(self.model, **fi_kw)
+            self.flashinfer_on = True
             logger.info("FlashInfer enabled (%s).", fi_kw or "no CUDA graphs")
         if COMPILE and str(self.device).startswith("cuda"):
             # dynamic=True: every text chunk has its own sequence length.
@@ -863,7 +879,7 @@ class OmniVoiceEngine:
         kwargs = dict(ref_audio=str(ref_audio), ref_text=(ref_text or None),
                       preprocess_prompt=preprocess_prompt)
         on_gpu = str(self.device).startswith("cuda")
-        if on_gpu and (PROMPT_WORKER == "1" or (PROMPT_WORKER == "auto" and FLASHINFER)):
+        if on_gpu and (PROMPT_WORKER == "1" or (PROMPT_WORKER == "auto" and self.flashinfer_on)):
             return self._build_prompt_in_worker(kwargs)
         if not ref_text:
             self._ensure_asr()
