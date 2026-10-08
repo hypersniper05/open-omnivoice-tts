@@ -1,0 +1,80 @@
+# open-omnivoice-tts: OmniVoice behind an OpenAI-compatible TTS API, in a GPU container.
+#
+#   start.cmd / ./start.sh        build, start and wait until ready (recommended)
+#   docker compose logs -f        watch the logs
+#   stop.cmd / ./stop.sh          stop
+#
+# Settings: .env (created by the start scripts from .env.example) and
+# app/openai_voices.json (created from app/openai_voices.example.json).
+# Machine-specific additions, such as CPU or RAM limits, go in
+# docker-compose.override.yml: Docker Compose merges it over this file, and git
+# ignores it.
+services:
+  tts:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # GPU architecture of the FlashInfer kernels: 8.6 = RTX 30, 8.9 = RTX 40,
+        # 12.0 = RTX 50. The start scripts read it from your GPU into .env.
+        FLASHINFER_CUDA_ARCH_LIST: ${FLASHINFER_CUDA_ARCH_LIST:-8.6}
+    image: omnivoice-tts:latest
+    container_name: omnivoice-tts
+    restart: unless-stopped
+    ports:
+      - "${OMNIVOICE_PORT:-8008}:8008"   # published on all interfaces (LAN, VPN)
+    volumes:
+      # Optional local copy of the model. When it is empty, the first start
+      # downloads the model (about 3 GB) into the omnivoice-hf volume instead.
+      - ./model:/app/model:ro
+      - ./Voices:/app/Voices:ro                       # reference voices
+      - ./Voices/custom:/app/Voices/custom            # voices made through POST /v1/audio/voices
+      - ./app/openai_voices.json:/app/app/openai_voices.json   # API settings, re-read on change
+      - ./output/prompt_cache:/app/output/prompt_cache         # each voice is built once, then cached
+      - ./output/voice_cache:/app/output/voice_cache           # .m4a/.aac/.wma voices converted to wav
+      - ./output/inductor_cache:/app/.inductor_cache           # torch.compile cache (compile mode only)
+      - omnivoice-hf:/app/.hf_cache                   # the model and Whisper downloads
+    environment:
+      - HF_HOME=/app/.hf_cache
+      - HF_TOKEN=${HF_TOKEN:-}        # optional: faster model downloads, higher rate limits
+      # The GPU: an nvidia-smi index or a UUID (OMNIVOICE_GPU in .env). Docker
+      # Desktop gives the container every GPU whatever device_ids says, so the card
+      # is picked here. PCI bus order makes the index match nvidia-smi.
+      - CUDA_DEVICE_ORDER=PCI_BUS_ID
+      - CUDA_VISIBLE_DEVICES=${OMNIVOICE_GPU:-0}
+      - OMNIVOICE_DEVICE=${OMNIVOICE_DEVICE:-cuda:0}  # cpu = CPU mode, more than 100 times slower
+      # Unload the model after this many idle seconds; the next request reloads it.
+      - OMNIVOICE_IDLE_TTL=${OMNIVOICE_IDLE_TTL:-600}
+      # Cap on the share of GPU memory torch may use (empty = no cap). Past the cap
+      # a request is retried sentence by sentence, then answered with a 503.
+      - OMNIVOICE_MEM_FRACTION=${OMNIVOICE_MEM_FRACTION:-}
+      # FlashInfer attention: about 25% faster than torch.compile. Use one or the
+      # other (FlashInfer + compile needs a compiler the image does not have).
+      - OMNIVOICE_FLASHINFER=1
+      - OMNIVOICE_COMPILE=
+      # Whisper (transcribes voices that have no transcript) runs on the CPU.
+      - OMNIVOICE_ASR_DEVICE=cpu
+      # Request limits: longer input gets a 413; more waiting requests get a 429.
+      - OMNIVOICE_MAX_INPUT_CHARS=20000
+      - OMNIVOICE_MAX_QUEUE=8
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - TORCHINDUCTOR_CACHE_DIR=/app/.inductor_cache
+      - TRITON_CACHE_DIR=/app/.inductor_cache/triton
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all            # CUDA_VISIBLE_DEVICES above picks the card
+              capabilities: [gpu]
+    healthcheck:
+      # /api/meta reports `ready` once the model is loaded (it stays true while the
+      # model is unloaded for idleness).
+      test: ["CMD", "python", "-c", "import urllib.request,json,sys; sys.exit(0 if json.load(urllib.request.urlopen('http://127.0.0.1:8008/api/meta', timeout=5)).get('ready') else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 900s            # the first start downloads the model
+
+volumes:
+  omnivoice-hf:

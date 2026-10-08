@@ -1,0 +1,42 @@
+# the model and generated files
+model/
+output/
+*.safetensors
+
+# voices: only the bundled, openly licensed LibriTTS-R clips are part of the repository
+Voices/*
+!Voices/[0-9]*_[0-9]*_[0-9]*_[0-9]*.wav
+!Voices/[0-9]*_[0-9]*_[0-9]*_[0-9]*.original.txt
+!Voices/voices.json
+!Voices/ATTRIBUTION.md
+!Voices/custom/
+Voices/custom/*
+!Voices/custom/.gitkeep
+docs/samples/Fabel.mp3
+
+# local settings (the start scripts create these from the tracked examples)
+.env
+.env.*
+!.env.example
+app/openai_voices.json
+docker-compose.override.yml
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# leftovers
+_transcript_feature_backup/
+*.bak*
+
+# Windows scripts for running without Docker (not part of the published project)
+setup_env.ps1
+run_tts_api.ps1

@@ -1,0 +1,3 @@
+[submodule "vendor/omnivoice-src"]
+	path = vendor/omnivoice-src
+	url = https://github.com/k2-fsa/OmniVoice.git

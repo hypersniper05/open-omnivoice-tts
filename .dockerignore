@@ -1,0 +1,24 @@
+# Keep the build context small — large/host-only dirs are mounted at runtime,
+# not copied into the image.
+.venv/
+output/
+model/
+Voices/
+docs/
+tools/
+_transcript_feature_backup/
+.hf_cache/
+**/__pycache__/
+*.pyc
+*.log
+.git/
+vendor/**/.git/
+# Local settings: mounted at runtime (openai_voices.json) or read by compose (.env)
+app/openai_voices.json
+.env
+docker-compose.override.yml
+# Docs/scripts not needed in the image
+*.md
+*.ps1
+*.cmd
+*.sh

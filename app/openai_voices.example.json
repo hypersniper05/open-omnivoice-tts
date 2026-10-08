@@ -1,0 +1,38 @@
+{
+  "_comment": "Settings of the OpenAI-compatible API, re-read on every change (no restart). The start scripts create openai_voices.json from this file; edit that copy, it is not part of the repository. 'voices' maps voice names to files in ../Voices or to 'design:<attributes>'. 'api_key' null = open; a string is required as a Bearer token. 'allow_custom_voices' turns on POST /v1/audio/voices and /v1/audio/voice_consents. 'fable' uses ballad's voice until it has its own.",
+  "api_key": null,
+  "allow_custom_voices": false,
+  "default_voice": "alloy",
+  "default_format": "mp3",
+  "default_speed": 1.0,
+  "normalize": true,
+  "loudness_target_dbfs": -20.0,
+  "voices": {
+    "alloy": "1462_170138_000022_000009.wav",
+    "ash": "6241_61946_000019_000003.wav",
+    "ballad": "6841_88291_000002_000001.wav",
+    "cedar": "6295_244435_000028_000000.wav",
+    "coral": "4153_61735_000008_000000.wav",
+    "echo": "2902_9008_000009_000001.wav",
+    "fable": "6841_88291_000002_000001.wav",
+    "marin": "7850_73752_000003_000015.wav",
+    "nova": "700_122868_000033_000001.wav",
+    "onyx": "6599_38591_000000_000011.wav",
+    "sage": "7850_286674_000001_000005.wav",
+    "shimmer": "8173_294714_000027_000002.wav",
+    "verse": "5694_64029_000019_000003.wav"
+  },
+  "generation": {
+    "num_step": 16,
+    "guidance_scale": 3.0,
+    "t_shift": 0.1,
+    "layer_penalty_factor": 5.0,
+    "position_temperature": 10.0,
+    "class_temperature": 0.0,
+    "denoise": true,
+    "preprocess_prompt": true,
+    "postprocess_output": true,
+    "chunk_paragraphs": true,
+    "para_gap": 0.35
+  }
+}
