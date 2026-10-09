@@ -824,7 +824,7 @@ client.audio.speech.create(
     model="tts-1", voice="narrator", input="Hello!"
 ).write_to_file("hello.mp3")
 
-# Or describe a voice (turn on allow_custom_voices first)
+# Or describe a voice with OpenAI's voice API
 voice = client.audio.voices.create(
     type="prompt", name="Narrator",
     prompt="female, middle-aged, low pitch, british accent")` },

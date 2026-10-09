@@ -103,9 +103,10 @@ curl http://localhost:8008/v1/audio/speech -H "Content-Type: application/json" \
   `nvidia-smi` number (or UUID) of the card to use. The default is GPU 0.
 - **Updates**: after pulling new code, run `./start.sh --build` or `start.cmd -Build`.
 
-> **Security note.** By default there is **no API key**, and the server listens on all network interfaces.
-> Set `api_key` in `app/openai_voices.json` before other computers can reach port 8008, use a VPN such as
-> Tailscale for remote access, and never forward the port to the internet.
+> **Security note.** By default there is **no API key**, the server listens on all network interfaces, and
+> custom voices are on, so anyone who can reach port 8008 can also upload audio to create voices. Set `api_key`
+> in `app/openai_voices.json` before other computers can reach the port, use a VPN such as Tailscale for remote
+> access, and never forward the port to the internet.
 
 ## Connect a client
 
@@ -155,9 +156,10 @@ Put a clip of one speaker (3 to 20 s, little background noise) in `Voices/` and 
 - **More open voices**: [`tools/pick_libritts_voices.py`](tools/pick_libritts_voices.py) picks clean clips
   from a LibriTTS-R download and writes their credits.
 
-**Custom voices** (OpenAI's voice API) are off by default: set `"allow_custom_voices": true` and an `api_key`
-in `app/openai_voices.json`. A voice from a description uses OmniVoice's attributes (gender, age, pitch, style,
-accent):
+**Custom voices** (OpenAI's voice API) are on by default: clients can create a voice from an audio sample or from
+a description. To turn this off, set `"allow_custom_voices": false` in `app/openai_voices.json`. Set an `api_key`
+there too before other computers can reach the server. A voice from a description uses OmniVoice's attributes
+(gender, age, pitch, style, accent):
 
 ```python
 voice = client.audio.voices.create(type="prompt", name="Narrator",
@@ -176,7 +178,7 @@ A voice from an audio sample needs a consent recording first (`POST /v1/audio/vo
 | Setting | Default | |
 |---|---|---|
 | `api_key` | `null` | Require this Bearer token |
-| `allow_custom_voices` | `false` | Turn on the custom voice endpoints |
+| `allow_custom_voices` | `true` | The custom voice endpoints; `false` turns them off |
 | `voices` | the 13 OpenAI names | Voice name -> file in `Voices/` |
 | `generation.num_step` | 16 | Quality vs. speed |
 

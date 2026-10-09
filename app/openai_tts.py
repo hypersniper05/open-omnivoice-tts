@@ -87,7 +87,7 @@ EXAMPLE_PATH = CONFIG_PATH.with_name("openai_voices.example.json")
 try:
     DEFAULT_CONFIG = json.loads(EXAMPLE_PATH.read_text(encoding="utf-8"))
 except (OSError, ValueError):
-    DEFAULT_CONFIG = {"api_key": None, "allow_custom_voices": False, "default_voice": "alloy",
+    DEFAULT_CONFIG = {"api_key": None, "allow_custom_voices": True, "default_voice": "alloy",
                       "default_format": "mp3", "default_speed": 1.0, "normalize": True,
                       "loudness_target_dbfs": -20.0, "voices": {}, "generation": {"num_step": 16}}
 
