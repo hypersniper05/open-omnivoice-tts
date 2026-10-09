@@ -65,11 +65,16 @@ ASR_MODEL = os.environ.get("OMNIVOICE_ASR_MODEL") or "large-v3-turbo"
 COMPILE = os.environ.get("OMNIVOICE_COMPILE", "").strip()
 # Upstream's FlashInfer path (omnivoice_flashinfer.apply_flashinfer, needs the
 # flashinfer package and the image's AOT kernels): "" = off, "1" = packed ragged attention,
-# "graphs" = plus CUDA graphs per shape bucket (OMNIVOICE_FI_BUCKETS, default
-# 10,20,30; OMNIVOICE_FI_OVERHEAD, default 1024 tokens).
+# "graphs" = plus a CUDA graph: each generation captures one graph for its exact shape
+# and replays it for every step, then drops it (one generation = one graph in VRAM).
+# Measured through the API: RTX 5090 sentence 0.25 -> 0.17 s, paragraph 0.71 -> 0.64 s;
+# RTX 3080 clone sentence 0.31 -> 0.33 s (the capture costs what the replays save there),
+# voice design 0.20 -> 0.17 s. OMNIVOICE_FI_BUCKETS (e.g. "4,6,8,10,15,20,30") switches to upstream's
+# bucket mode instead: fixed padded shapes, graphs kept (OMNIVOICE_FI_OVERHEAD tokens of
+# room for text and reference); with large buckets it was slower than no graphs.
 FLASHINFER = os.environ.get("OMNIVOICE_FLASHINFER", "").strip()
-FI_BUCKETS = [int(x) for x in (os.environ.get("OMNIVOICE_FI_BUCKETS") or "10,20,30").split(",") if x.strip()]
-FI_OVERHEAD = int(os.environ.get("OMNIVOICE_FI_OVERHEAD") or 1024)
+FI_BUCKETS = [int(x) for x in (os.environ.get("OMNIVOICE_FI_BUCKETS") or "").split(",") if x.strip()]
+FI_OVERHEAD = int(os.environ.get("OMNIVOICE_FI_OVERHEAD") or 512)
 # Hard cap on torch's allocator on the GPU, for a card shared with other work:
 # a fraction of the card (OMNIVOICE_MEM_FRACTION, e.g. 0.55 = 5,632 MiB of a
 # 10 GB card) or an absolute OMNIVOICE_VRAM_CAP_MIB. Unset = no cap. Past the cap a
@@ -131,6 +136,24 @@ def _no_tensor_cores(name: str, capability: tuple[int, int]) -> bool:
     if capability < (7, 0):
         return True
     return capability == (7, 5) and bool(re.search(r"GTX 16|\bMX ?[45]\d0\b|\bT(400|500|550|600|1000|1200|2000)\b", name))
+
+
+def _drop_graphs_after_each_generation(model) -> None:
+    """Exact-shape CUDA graphs (upstream apply_flashinfer(enable_cuda_graph=True)) are
+    cached per input shape and never freed: each kept its own memory pool and a 64 MB
+    attention workspace, +1.1 GB after a dozen texts on a 5090. Nearly all of the gain
+    is inside one generation (one capture, then a replay per step), so drop the cache
+    when each _generate_iterative call returns: one graph at a time, however long the
+    text."""
+    run = model._generate_iterative
+
+    def generate_then_drop(*args, **kwargs):
+        try:
+            return run(*args, **kwargs)
+        finally:
+            model._fi_graph_cache.clear()
+
+    model._generate_iterative = generate_then_drop
 
 
 def _sentence_units(text: str) -> Optional[str]:
@@ -504,11 +527,16 @@ class OmniVoiceEngine:
             logger.info("FlashInfer skipped: it needs float16, the model runs in %s.", dtype)
         elif FLASHINFER and str(self.device).startswith("cuda"):
             from omnivoice.models.omnivoice_flashinfer import apply_flashinfer
-            fi_kw = (dict(cuda_graph_buckets=FI_BUCKETS, overhead_budget=FI_OVERHEAD)
-                     if FLASHINFER == "graphs" else {})
+            fi_kw = {}
+            if FLASHINFER == "graphs":
+                fi_kw = (dict(cuda_graph_buckets=FI_BUCKETS, overhead_budget=FI_OVERHEAD)
+                         if FI_BUCKETS else dict(enable_cuda_graph=True))
             apply_flashinfer(self.model, **fi_kw)
+            if fi_kw.get("enable_cuda_graph"):
+                _drop_graphs_after_each_generation(self.model)
             self.flashinfer_on = True
-            logger.info("FlashInfer enabled (%s).", fi_kw or "no CUDA graphs")
+            logger.info("FlashInfer enabled (%s).", "no CUDA graphs" if not fi_kw else
+                        "CUDA graph per generation" if fi_kw.get("enable_cuda_graph") else fi_kw)
         if COMPILE and str(self.device).startswith("cuda"):
             # dynamic=True: every text chunk has its own sequence length.
             self.model.llm.compile(dynamic=True, mode=None if COMPILE in ("1", "default") else COMPILE)
