@@ -67,8 +67,9 @@ COMPILE = os.environ.get("OMNIVOICE_COMPILE", "").strip()
 # flashinfer package and the image's AOT kernels): "" = off, "1" = packed ragged attention,
 # "graphs" = plus a CUDA graph: each generation captures one graph for its exact shape
 # and replays it for every step, then drops it (one generation = one graph in VRAM).
-# Measured on a 5090: sentence 0.20 s -> 0.13-0.16 s with the capture, paragraph 0.64 s
-# -> 0.43 s. OMNIVOICE_FI_BUCKETS (e.g. "4,6,8,10,15,20,30") switches to upstream's
+# Measured through the API: RTX 5090 sentence 0.25 -> 0.17 s, paragraph 0.71 -> 0.64 s;
+# RTX 3080 clone sentence 0.31 -> 0.33 s (the capture costs what the replays save there),
+# voice design 0.20 -> 0.17 s. OMNIVOICE_FI_BUCKETS (e.g. "4,6,8,10,15,20,30") switches to upstream's
 # bucket mode instead: fixed padded shapes, graphs kept (OMNIVOICE_FI_OVERHEAD tokens of
 # room for text and reference); with large buckets it was slower than no graphs.
 FLASHINFER = os.environ.get("OMNIVOICE_FLASHINFER", "").strip()

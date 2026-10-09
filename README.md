@@ -21,7 +21,7 @@ AnythingLLM, or the `openai` SDKs.
 - **OpenAI-compatible** `/v1/audio/speech`: all output formats, `speed`, and all 13 OpenAI voice names
 - **Voice cloning** from a 3 to 20 second recording, and **12 open voices** ready to use
 - **OpenAI's custom voice API**: create voices from an audio sample or from a description
-- **Fast**: 25 to 30 times faster than real time on an RTX 3080, about 3.4 GB of VRAM
+- **Fast**: a sentence in 0.34 s on an RTX 3080 and 0.17 s on an RTX 5090, about 4 GB of VRAM
 - **Interactive API docs** at `/docs`
 
 ## Examples
@@ -60,7 +60,7 @@ readers in [LibriTTS-R](https://www.openslr.org/141/) (credits: [Voices/ATTRIBUT
 | | |
 |---|---|
 | Docker | Docker Desktop (Windows) or Docker Engine with Compose and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) (Linux) |
-| GPU | NVIDIA, at least 6 GB of VRAM recommended; driver 580 or newer. Tested on an RTX 3080 |
+| GPU | NVIDIA, at least 6 GB of VRAM recommended; driver 580 or newer. Tested on an RTX 3080 and an RTX 5090 |
 | RAM | 16 GB |
 | Disk | About 40 GB free for the first start (about 20 GB of it is Docker's build cache: `docker builder prune` frees it) |
 
@@ -188,20 +188,29 @@ A voice from an audio sample needs a consent recording first (`POST /v1/audio/vo
 | `OMNIVOICE_PORT` | 8008 | Port of the API |
 | `OMNIVOICE_IDLE_TTL` | 600 | Unload the model after this many idle seconds (0 = never) |
 | `OMNIVOICE_MEM_FRACTION` | empty | Cap the model's share of GPU memory, e.g. `0.55` |
+| `OMNIVOICE_FLASHINFER` | `graphs` | FlashInfer with CUDA graphs; `1` = without CUDA graphs (see [Performance](#performance)); empty = off |
+| `OMNIVOICE_DTYPE` | empty | Precision: automatic (float16 on RTX cards, float32 on GTX 16-series and older), or `float16` / `float32` |
 | `HF_TOKEN` | empty | Optional Hugging Face token for faster downloads |
 
 Machine-specific Docker settings, such as CPU or RAM limits, go in `docker-compose.override.yml` (git ignores it).
 
 ## Performance
 
-RTX 3080, default 16 steps. A sentence is about 4.6 s of speech, a paragraph about 32 s:
+Default settings (16 steps, FlashInfer with CUDA graphs), measured through the API. A sentence is about 4.6 s
+of speech, a paragraph about 32 s:
 
-| | GPU (RTX 3080) | CPU (4 cores) |
-|---|---|---|
-| Sentence | 0.34 s | 62 s |
-| Paragraph | 1.4 s | 183 s |
-| Sentence with voice design | 0.23 s | 13 s |
-| First request with a new voice (builds it once) | 6 s, or 14 s without a transcript | 84 to 140 s |
+| | RTX 3080 | RTX 5090 | CPU (4 cores) |
+|---|---|---|---|
+| Sentence | 0.34 s | 0.17 s | 62 s |
+| Paragraph | 1.5 s | 0.64 s | 183 s |
+| Sentence with voice design | 0.18 s | 0.12 s | 13 s |
+| First request with a new voice (builds it once) | 6 s, or 14 s without a transcript | 2 s with a transcript | 84 to 140 s |
+
+**CUDA graphs and the RTX 3080.** CUDA graphs cut the cost of launching the model's many small GPU kernels,
+which is what limits fast cards: on the RTX 5090 they take a sentence from 0.25 s to 0.17 s. On an RTX 3080 the
+GPU itself is the limit, so voice cloning is about 8% faster without them (sentence 0.31 s, paragraph 1.4 s),
+while voice design is faster with them. To turn them off, set `OMNIVOICE_FLASHINFER=1` in `.env` and run the
+start script again.
 
 CPU mode (`OMNIVOICE_DEVICE=cpu`) works but is more than 100 times slower. Whisper, which transcribes voices
 that have no transcript, had a 1.7% word error rate on the bundled clips.
@@ -210,7 +219,7 @@ that have no transcript, had a 1.7% word error rate on the bundled clips.
 
 - **No GPU found**: run the `nvidia-smi` check above. On Linux, install the NVIDIA Container Toolkit.
 - **`MissingJITCacheError`**: the image was built for another GPU. Run `start.cmd -Build` or
-  `./start.sh --build`. Only RTX 30-series cards have been tested.
+  `./start.sh --build`. Tested on an RTX 3080 and an RTX 5090.
 - **A breath or blip at the start of the speech**: add silence to the voice's clip (see [Voices](#voices)), or
   use a clip with no breath before the first word.
 - **Other computers cannot connect**: use this computer's IP address and allow port 8008 in the firewall.

@@ -372,9 +372,9 @@
     </div>
 
     <div class="stats reveal" style="text-align:left">
+      <div class="stat"><b>0.17<small>s</small></b><span>to speak a sentence on an RTX 5090</span></div>
       <div class="stat"><b>0.34<small>s</small></b><span>to speak a sentence on an RTX 3080</span></div>
-      <div class="stat"><b>25&ndash;30<small>&times;</small></b><span>faster than real time</span></div>
-      <div class="stat"><b>3.4<small>GB</small></b><span>of VRAM at peak</span></div>
+      <div class="stat"><b>4<small>GB</small></b><span>of VRAM at peak</span></div>
       <div class="stat"><b>600<small>+</small></b><span>languages</span></div>
     </div>
   </div>
@@ -472,7 +472,7 @@
         <div class="benefit card reveal"><div class="ic"><svg><use href="#i-smile"/></svg></div>
           <div><h3>Expressive tags</h3><p>Write <code>[laughter]</code> or <code>[sigh]</code> in the text and hear it.</p></div></div>
         <div class="benefit card reveal"><div class="ic"><svg><use href="#i-chip"/></svg></div>
-          <div><h3>Small footprint</h3><p>About 3.4 GB of VRAM at peak. Unloads after 10 idle minutes.</p></div></div>
+          <div><h3>Small footprint</h3><p>About 4 GB of VRAM at peak. Unloads after 10 idle minutes.</p></div></div>
         <div class="benefit card reveal"><div class="ic"><svg><use href="#i-share"/></svg></div>
           <div><h3>Plays well with others</h3><p>Caps its GPU memory, queues requests and recovers from out-of-memory errors.</p></div></div>
         <div class="benefit card reveal"><div class="ic"><svg><use href="#i-book"/></svg></div>
@@ -502,19 +502,20 @@
     <div class="wrap">
       <div class="head reveal">
         <div><span class="tag">// Performance //</span><h2>Fast on a GPU.<br>Possible on a CPU.</h2></div>
-        <p>Measured on an RTX 3080 with the default 16 steps. A sentence is about 4.6 seconds of speech, a paragraph
-          about 32 seconds.</p>
+        <p>Measured through the API with the default settings (16 steps, CUDA graphs) on an RTX 5090 and an RTX 3080.
+          A sentence is about 4.6 seconds of speech, a paragraph about 32 seconds.</p>
       </div>
       <div class="perf">
         <div class="shell reveal">
-          <div class="card"><div class="lbl">One sentence</div><div class="big">0.34 s <small>on the GPU</small></div>
+          <div class="card"><div class="lbl">One sentence</div><div class="big">0.17 s <small>on an RTX 5090</small></div>
             <p>Time to the complete audio file</p></div>
-          <ul><li>About 4.6 s of speech</li><li>With voice design: 0.23 s</li><li>On 4 CPU cores: 62 s</li></ul>
+          <ul><li>About 4.6 s of speech</li><li>RTX 3080: 0.34 s</li><li>With voice design: 0.12 s (RTX 3080: 0.18 s)</li>
+            <li>On 4 CPU cores: 62 s</li></ul>
         </div>
         <div class="shell reveal">
-          <div class="card"><div class="lbl">One paragraph</div><div class="big">1.4 s <small>on the GPU</small></div>
+          <div class="card"><div class="lbl">One paragraph</div><div class="big">0.64 s <small>on an RTX 5090</small></div>
             <p>Time to the complete audio file</p></div>
-          <ul><li>About 32 s of speech</li><li>On 4 CPU cores: 183 s</li><li>A new voice is prepared once: 6 s with a transcript, 14 s without</li></ul>
+          <ul><li>About 32 s of speech</li><li>RTX 3080: 1.5 s</li><li>On 4 CPU cores: 183 s</li><li>A new voice is prepared once: 6 s with a transcript, 14 s without</li></ul>
         </div>
         <div class="darkc reveal">
           <div class="card"><div class="lbl">What you need</div><div class="big">6 GB <small>of VRAM, recommended</small></div>
@@ -549,7 +550,8 @@
             <code>tts-1</code>.</p></details>
         <details><summary>Which GPUs work?<span class="pm"></span></summary>
           <p>NVIDIA GPUs, with at least 6 GB of VRAM recommended. The start script builds the kernels for your card's architecture.
-            RTX 30-series cards are tested.</p></details>
+            Tested on an RTX 3080 and an RTX 5090. On an RTX 3080, voice cloning is about 8% faster with CUDA graphs
+            turned off: set <code>OMNIVOICE_FLASHINFER=1</code> in <code>.env</code>.</p></details>
         <details><summary>Can I clone my own voice?<span class="pm"></span></summary>
           <p>Yes. Put a 3 to 20 second clip of one speaker in <code>Voices/</code>, with what it says in a
             <code>.txt</code> file next to it, and use the file name as the voice. Only clone voices you have the
