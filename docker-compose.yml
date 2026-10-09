@@ -48,9 +48,10 @@ services:
       # Cap on the share of GPU memory torch may use (empty = no cap). Past the cap
       # a request is retried sentence by sentence, then answered with a 503.
       - OMNIVOICE_MEM_FRACTION=${OMNIVOICE_MEM_FRACTION:-}
-      # FlashInfer attention: about 25% faster than torch.compile. Use one or the
-      # other (FlashInfer + compile needs a compiler the image does not have).
-      - OMNIVOICE_FLASHINFER=1
+      # FlashInfer attention plus a CUDA graph per generation: one capture, then a
+      # replay for every step ("1" = FlashInfer without graphs, empty = off). Use it
+      # or torch.compile, not both (that needs a compiler the image does not have).
+      - OMNIVOICE_FLASHINFER=graphs
       - OMNIVOICE_COMPILE=
       # Model precision: empty = automatic (float16 on RTX cards, float32 on GTX
       # 16-series and older GPUs, which have no tensor cores), or float16 / float32.
