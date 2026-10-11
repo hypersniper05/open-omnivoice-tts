@@ -1,0 +1,80 @@
+# OmniVoice OpenAI-compatible TTS image for AMD GPUs (ROCm): torch 2.12.0 +
+# torch.compile attention. This is the ROCm companion to `Dockerfile` (NVIDIA
+# CUDA + FlashInfer). It is intentionally self-contained: no FlashInfer, no
+# AOT stage, because FlashInfer is CUDA-only (CUTLASS) and has no ROCm build.
+#
+# Why a separate file rather than a build argument:
+#   * The CUDA image has a multi-stage build whose first stage only exists to
+#     compile FlashInfer kernels. On ROCm that stage is meaningless, so a single
+#     clean stage is clearer than a conditional.
+#   * This file is a purely additive fork: `Dockerfile` (CUDA) is left untouched
+#     and stays the default.
+#
+# torch version: the CUDA image uses torch 2.14.1; the newest `rocm/pytorch`
+# build for Python 3.12 is 2.12.0 (rocm7.14). There is no 2.13/2.14 ROCm image
+# yet, so this image uses 2.12.0. OmniVoice requires torch>=2.4, so 2.12.0 is
+# fine. If a newer ROCm build appears, bump the base tag and this comment.
+#
+# FlashInfer is switched OFF on ROCm (OMNIVOICE_FLASHINFER empty, set in
+# docker-compose.rocm.yml). The model then uses HuggingFace's default attention
+# (SDPA), which works on ROCm. Speed comes from torch.compile
+# (OMNIVOICE_COMPILE=1): Inductor + Triton both support ROCm. Without FlashInfer
+# the un-compiled baseline is still sub-second per sentence; compile is the main
+# lever (on CUDA, FlashInfer is only ~25% faster than torch.compile).
+#
+# GPU architecture: ROCm ships prebuilt kernels per gfx target. Recent cards
+# (e.g. gfx1201 / RDNA 4) are supported natively by rocm7.x. If you run an
+# architecture the image does not know, set HSA_OVERRIDE_GFX_VERSION to the
+# nearest supported target (see README.md); it is read from the environment and
+# left empty by default.
+
+FROM docker.io/rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorch_release_2.12.0
+
+# build-essential: torch.compile (Inductor's C++ path) needs a C++ compiler,
+# which this base does not guarantee. FlashInfer is off on ROCm, so the cost
+# is only the compiler toolchain, not a CUDA toolkit.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg libsndfile1 build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# System Python (Ubuntu 24.04, PEP 668) -- single-purpose container.
+ENV PIP_BREAK_SYSTEM_PACKAGES=1 \
+    MAX_JOBS=2
+
+# torch 2.12.0 + torchaudio already ship in this base (the ROCm build), so they
+# are not reinstalled. The rest are pinned to the same set the CUDA image was
+# tested with (2026-10-08), minus flashinfer-python (CUDA-only).
+RUN pip install --no-cache-dir \
+        "transformers==5.18.0" \
+        "tokenizers==0.23.2" \
+        "accelerate==1.15.0" \
+        "safetensors==0.8.0" \
+        "soundfile==0.14.0" \
+        "pydub==0.25.1" \
+        "huggingface_hub==1.33.0" \
+        "faster-whisper==1.2.1"
+
+# Fail the build early if a CUDA torch slipped in (e.g. a dep pulling torch from
+# PyPI). The whole image is only useful with the ROCm torch, so this is a hard
+# requirement, not a warning.
+RUN python -c "import torch, sys; sys.exit(0 if torch.version.hip else 'CUDA torch replaced the ROCm torch -- aborting')"
+
+COPY vendor/omnivoice-src/ /app/vendor/omnivoice-src/
+RUN pip install --no-cache-dir --no-deps -e /app/vendor/omnivoice-src
+
+COPY core/ /app/core/
+COPY app/ /app/app/
+
+ENV PYTHONUNBUFFERED=1 \
+    HF_HOME=/app/.hf_cache
+
+EXPOSE 8008
+
+# Recorded on the image so the start scripts can tell what this build targets.
+LABEL omnivoice.vendor=rocm \
+      omnivoice.torch=2.12.0 \
+      omnivoice.rocm=7.14
+
+CMD ["python", "app/server.py", "--host", "0.0.0.0", "--port", "8008"]

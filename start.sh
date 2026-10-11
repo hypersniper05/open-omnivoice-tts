@@ -48,35 +48,98 @@ GPU=$(env_get OMNIVOICE_GPU 0)
 DEVICE=$(env_get OMNIVOICE_DEVICE cuda:0)
 ARCH=$(env_get FLASHINFER_CUDA_ARCH_LIST "")
 
-# The GPU and its architecture: the FlashInfer kernels are built for exactly one.
-if [ "$DEVICE" != "cpu" ]; then
-  if command -v nvidia-smi >/dev/null 2>&1; then
-    if INFO=$(nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader -i "$GPU" 2>/dev/null | head -n1) && [ -n "$INFO" ]; then
-      NAME=$(echo "$INFO" | cut -d, -f1 | sed 's/^ *//;s/ *$//')
-      CAP=$(echo "$INFO" | cut -d, -f2 | tr -d '[:space:]')
-      echo "==> GPU $GPU: $NAME (compute capability $CAP)"
-      if [ -z "$ARCH" ]; then ARCH=$CAP; env_set FLASHINFER_CUDA_ARCH_LIST "$ARCH"; echo "    set FLASHINFER_CUDA_ARCH_LIST=$ARCH in .env"; fi
-    else
-      echo "    warning: nvidia-smi does not know GPU '$GPU' (OMNIVOICE_GPU in .env)" >&2
-    fi
+# GPU vendor: nvidia (default) or rocm (AMD). Auto-detected from the driver tools,
+# or forced with GPU_VENDOR in .env (nvidia | rocm | auto). The vendor picks the
+# compose file and the image: NVIDIA uses Dockerfile + FlashInfer, ROCm uses
+# Dockerfile.rocm (FlashInfer is CUDA-only, so it is off; torch.compile instead).
+VENDOR=$(env_get GPU_VENDOR auto)
+VENDOR=$(printf '%s' "$VENDOR" | tr '[:upper:]' '[:lower:]')   # case-insensitive
+case "$VENDOR" in
+  nvidia|cuda) VENDOR=nvidia ;;
+  rocm|amd) VENDOR=rocm ;;
+  auto) : ;;
+  *) echo "    warning: unknown GPU_VENDOR '$VENDOR'; using auto-detect" >&2; VENDOR=auto ;;
+esac
+if [ "$VENDOR" = auto ]; then
+  if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+    VENDOR=nvidia
+  elif [ -e /dev/kfd ]; then
+    VENDOR=rocm   # the amdgpu kernel driver is loaded (the container only needs /dev/kfd)
   else
-    echo "    warning: nvidia-smi was not found. Is the NVIDIA driver installed?" >&2
+    VENDOR=nvidia   # fall back to the default; the GPU block below will warn
+  fi
+fi
+# COMPOSE_FILE is set ONLY for ROCm, and includes the override if present, so a
+# user's docker-compose.override.yml still loads. On NVIDIA it is left unset, so
+# Docker Compose loads docker-compose.yml + docker-compose.override.yml as usual.
+if [ "$VENDOR" = rocm ]; then
+  COMPOSE_FILE=docker-compose.rocm.yml
+  if [ -f docker-compose.override.yml ]; then COMPOSE_FILE="$COMPOSE_FILE:docker-compose.override.yml"; fi
+  export COMPOSE_FILE
+fi
+IMAGE=$([ "$VENDOR" = rocm ] && echo omnivoice-tts-rocm:latest || echo omnivoice-tts:latest)
+
+# The GPU: report it, and (for NVIDIA) pick the FlashInfer architecture.
+if [ "$DEVICE" != "cpu" ]; then
+  if [ "$VENDOR" = rocm ]; then
+    # AMD GPU: FlashInfer is CUDA-only, so it is off; torch.compile is the lever.
+    # The container only needs the amdgpu kernel driver + /dev/kfd (no ROCm
+    # userspace), so detect via /dev/kfd. The gfx target comes from the kernel
+    # topology; rocm-smi (deprecated in ROCm 7.x) is used only for the name.
+    if [ ! -e /dev/kfd ]; then
+      echo "    warning: /dev/kfd not found. Is the amdgpu kernel driver loaded?" >&2
+    fi
+    RGFX=$(grep -h gfx_target_version /sys/class/kfd/kfd/topology/nodes/*/properties 2>/dev/null | awk '{print $2}' | grep -v '^0$' | head -n1 || true)
+    RNAME=""
+    if command -v rocm-smi >/dev/null 2>&1; then
+      RNAME=$(rocm-smi --showproductname 2>/dev/null | grep -iE 'Card Series' | head -n1 | sed 's/.*Card Series:[[:space:]]*//' || true)
+    fi
+    echo "==> AMD GPU $GPU: ${RNAME:-AMD GPU}${RGFX:+ (gfx target $RGFX)}"
+    echo "    ROCm: FlashInfer is off (CUDA-only); speed comes from torch.compile."
+  else
+    if command -v nvidia-smi >/dev/null 2>&1; then
+      if INFO=$(nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader -i "$GPU" 2>/dev/null | head -n1) && [ -n "$INFO" ]; then
+        NAME=$(echo "$INFO" | cut -d, -f1 | sed 's/^ *//;s/ *$//')
+        CAP=$(echo "$INFO" | cut -d, -f2 | tr -d '[:space:]')
+        echo "==> GPU $GPU: $NAME (compute capability $CAP)"
+        if [ -z "$ARCH" ]; then ARCH=$CAP; env_set FLASHINFER_CUDA_ARCH_LIST "$ARCH"; echo "    set FLASHINFER_CUDA_ARCH_LIST=$ARCH in .env"; fi
+      else
+        echo "    warning: nvidia-smi does not know GPU '$GPU' (OMNIVOICE_GPU in .env)" >&2
+      fi
+    else
+      echo "    warning: nvidia-smi was not found. Is the NVIDIA driver installed?" >&2
+    fi
   fi
 else
   echo "==> CPU mode (OMNIVOICE_DEVICE=cpu): more than 100 times slower than a GPU"
 fi
-ARCH=${ARCH:-8.6}
+# The FlashInfer architecture is only meaningful for NVIDIA.
+if [ "$VENDOR" = nvidia ]; then ARCH=${ARCH:-8.6}; fi
 
 # Build first, while any running instance keeps serving.
-IMAGE=omnivoice-tts:latest
 BUILT_ARCH=""
+BUILT_VENDOR=""
 HAVE_IMAGE=0
 if docker image inspect "$IMAGE" >/dev/null 2>&1; then
   HAVE_IMAGE=1
   BUILT_ARCH=$(docker image inspect -f '{{index .Config.Labels "omnivoice.flashinfer_arch"}}' "$IMAGE" 2>/dev/null || true)
+  BUILT_VENDOR=$(docker image inspect -f '{{index .Config.Labels "omnivoice.vendor"}}' "$IMAGE" 2>/dev/null || true)
 fi
-if [ "$BUILD" = 1 ] || [ "$HAVE_IMAGE" = 0 ] || [ "$BUILT_ARCH" != "$ARCH" ]; then
-  [ "$HAVE_IMAGE" = 1 ] && [ "$BUILD" = 0 ] && echo "==> the image has kernels for '$BUILT_ARCH', this GPU needs $ARCH"
+# Rebuild if forced, missing, or built for a different GPU: the ROCm image is
+# labelled omnivoice.vendor=rocm; the CUDA image is labelled
+# omnivoice.flashinfer_arch=<arch>.
+NEED_BUILD=0
+[ "$BUILD" = 1 ] && NEED_BUILD=1
+[ "$HAVE_IMAGE" = 0 ] && NEED_BUILD=1
+if [ "$HAVE_IMAGE" = 1 ]; then
+  if [ "$VENDOR" = rocm ]; then
+    [ "$BUILT_VENDOR" != rocm ] && NEED_BUILD=1
+  else
+    [ -n "$ARCH" ] && [ "$BUILT_ARCH" != "$ARCH" ] && NEED_BUILD=1
+  fi
+fi
+if [ "$NEED_BUILD" = 1 ]; then
+  [ "$HAVE_IMAGE" = 1 ] && [ "$BUILD" = 0 ] && [ "$VENDOR" = nvidia ] && echo "==> the image has kernels for '$BUILT_ARCH', this GPU needs $ARCH"
   echo "==> building the image (the first build downloads about 15 GB and takes 10 to 30 minutes)"
   docker compose build
 else

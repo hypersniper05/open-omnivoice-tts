@@ -1,0 +1,89 @@
+# open-omnivoice-tts (ROCm): OmniVoice behind an OpenAI-compatible TTS API, in an
+# AMD-GPU container. This is the ROCm companion to `docker-compose.yml` (NVIDIA
+# CUDA + FlashInfer). Use it when the host has an AMD GPU.
+#
+#   ./start.sh          auto-detects the GPU vendor and picks this file
+#   COMPOSE_FILE=docker-compose.rocm.yml docker compose up -d   (manual)
+#
+# The differences from the CUDA file, and why:
+#   * build.dockerfile is Dockerfile.rocm (the ROCm PyTorch image).
+#   * GPU access is plain device passthrough (/dev/kfd, /dev/dri) instead of the
+#     nvidia runtime reservation, because AMD GPUs do not use the nvidia driver.
+#   * HIP_* replaces CUDA_* (PyTorch's ROCm build aliases the CUDA API to HIP, so
+#     both work; HIP_* is the canonical name).
+#   * OMNIVOICE_FLASHINFER is empty: FlashInfer is CUDA-only (no ROCm build).
+#     OMNIVOICE_COMPILE=1 is the speed lever instead (Inductor + Triton on ROCm).
+#
+# Settings: .env (created by the start scripts from .env.example) and
+# app/openai_voices.json. Machine-specific additions go in
+# docker-compose.override.yml (Docker Compose merges it over this file).
+services:
+  tts:
+    build:
+      context: .
+      dockerfile: Dockerfile.rocm
+    image: omnivoice-tts-rocm:latest
+    container_name: omnivoice-tts
+    restart: unless-stopped
+    ports:
+      - "${OMNIVOICE_PORT:-8008}:8008"   # published on all interfaces (LAN, VPN)
+    # AMD GPU passthrough: the kernel driver node (kfd) and the DRM render node.
+    # Rootful Docker runs as root (no permission check). For rootless Docker or
+    # Podman the container user is the host user, so make sure that host user is
+    # in the `render` and `video` groups (e.g. `sudo usermod -aG render,video <user>`).
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    volumes:
+      # Optional local copy of the model. When it is empty, the first start
+      # downloads the model (about 3 GB) into the omnivoice-hf volume instead.
+      - ./model:/app/model:ro
+      - ./Voices:/app/Voices:ro                       # reference voices
+      - ./Voices/custom:/app/Voices/custom            # voices made through POST /v1/audio/voices
+      - ./app/openai_voices.json:/app/app/openai_voices.json   # API settings, re-read on change
+      - ./output/prompt_cache:/app/output/prompt_cache         # each voice is built once, then cached
+      - ./output/voice_cache:/app/output/voice_cache           # .m4a/.aac/.wma voices converted to wav
+      - ./output/inductor_cache:/app/.inductor_cache           # torch.compile cache (compile mode)
+      - omnivoice-hf:/app/.hf_cache                   # the model and Whisper downloads
+    environment:
+      - HF_HOME=/app/.hf_cache
+      - HF_TOKEN=${HF_TOKEN:-}        # optional: faster model downloads, higher rate limits
+      # The GPU: a rocm-smi index or a UUID (OMNIVOICE_GPU in .env).
+      - HIP_VISIBLE_DEVICES=${OMNIVOICE_GPU:-0}
+      - OMNIVOICE_DEVICE=${OMNIVOICE_DEVICE:-cuda:0}  # cuda:0 on ROCm = the AMD GPU; cpu = CPU mode
+      # Unload the model after this many idle seconds; the next request reloads it.
+      - OMNIVOICE_IDLE_TTL=${OMNIVOICE_IDLE_TTL:-600}
+      # Cap on the share of GPU memory torch may use (empty = no cap). Past the cap
+      # a request is retried sentence by sentence, then answered with a 503.
+      - OMNIVOICE_MEM_FRACTION=${OMNIVOICE_MEM_FRACTION:-}
+      # FlashInfer is CUDA-only, so it is OFF on ROCm (empty). Speed comes from
+      # torch.compile instead (OMNIVOICE_COMPILE=1): Inductor + Triton support ROCm.
+      - OMNIVOICE_FLASHINFER=
+      - OMNIVOICE_COMPILE=1
+      # Model precision: empty = automatic (float16 on tensor-core cards, float32
+      # otherwise). AMD cards use float16.
+      - OMNIVOICE_DTYPE=${OMNIVOICE_DTYPE:-}
+      # Whisper (transcribes voices that have no transcript) runs on the CPU.
+      - OMNIVOICE_ASR_DEVICE=cpu
+      # Request limits: longer input gets a 413; more waiting requests get a 429.
+      - OMNIVOICE_MAX_INPUT_CHARS=20000
+      - OMNIVOICE_MAX_QUEUE=8
+      # ROCm memory allocator (analogous to PYTORCH_CUDA_ALLOC_CONF, which the
+      # ROCm build also honours).
+      - PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
+      - TORCHINDUCTOR_CACHE_DIR=/app/.inductor_cache
+      - TRITON_CACHE_DIR=/app/.inductor_cache/triton
+      # For a GPU architecture the image does not know, set this to the nearest
+      # supported gfx target (see README.md). Empty by default.
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-}
+    healthcheck:
+      # /api/meta reports `ready` once the model is loaded (it stays true while the
+      # model is unloaded for idleness).
+      test: ["CMD", "python", "-c", "import urllib.request,json,sys; sys.exit(0 if json.load(urllib.request.urlopen('http://127.0.0.1:8008/api/meta', timeout=5)).get('ready') else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 900s            # the first start downloads the model
+
+volumes:
+  omnivoice-hf:

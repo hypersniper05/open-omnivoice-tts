@@ -15,7 +15,7 @@
 
 A self-hosted text-to-speech server with an **OpenAI-compatible API**, built on
 [OmniVoice](https://github.com/k2-fsa/OmniVoice), k2-fsa's zero-shot voice cloning model for 600+ languages. It
-runs in Docker on an NVIDIA GPU, and any OpenAI client can use it: Open WebUI, LibreChat, SillyTavern,
+runs in Docker on an NVIDIA or AMD (ROCm) GPU, and any OpenAI client can use it: Open WebUI, LibreChat, SillyTavern,
 AnythingLLM, or the `openai` SDKs.
 
 - **OpenAI-compatible** `/v1/audio/speech`: all output formats, `speed`, and all 13 OpenAI voice names
@@ -61,8 +61,9 @@ readers in [LibriTTS-R](https://www.openslr.org/141/) (credits: [Voices/ATTRIBUT
 |---|---|
 | Docker | Docker Desktop (Windows) or Docker Engine with Compose and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) (Linux) |
 | GPU | NVIDIA, at least 6 GB of VRAM recommended; driver 580 or newer. Tested on an RTX 3080 and an RTX 5090 |
+| GPU (AMD) | AMD, at least 8 GB of VRAM recommended; ROCm 7.x driver, **Linux** (Windows/WSL2 has no `/dev/kfd`). Tested on an RX 9070 XT (gfx1201) |
 | RAM | 16 GB |
-| Disk | About 40 GB free for the first start (about 20 GB of it is Docker's build cache: `docker builder prune` frees it) |
+| Disk | About 40 GB free for the first start (NVIDIA; ~50 GB for ROCm — the base image is larger). `docker builder prune` frees the build cache |
 
 Check that Docker can see your GPU:
 
@@ -82,7 +83,7 @@ cd open-omnivoice-tts
 .\start.cmd           # Windows (or double-click start.cmd)
 ```
 
-The first start builds the Docker image for your GPU (it downloads about 15 GB and takes 10 to 30 minutes),
+The first start builds the Docker image for your GPU (it downloads about 15 GB, or 20+ GB for ROCm, and takes 10 to 30 minutes),
 then downloads the model (about 3 GB). When the server is ready, the script prints:
 
 ```
@@ -99,8 +100,9 @@ curl http://localhost:8008/v1/audio/speech -H "Content-Type: application/json" \
 ```
 
 - **Stop**: `./stop.sh` or `stop.cmd`. **Logs**: `docker compose logs -f`.
+- **AMD GPU (ROCm)?** The same `./start.sh` works: it auto-detects the vendor and builds the ROCm image. See [AMD GPUs (ROCm)](#amd-gpus-rocm).
 - **More than one GPU**: before the first start, copy `.env.example` to `.env` and set `OMNIVOICE_GPU` to the
-  `nvidia-smi` number (or UUID) of the card to use. The default is GPU 0.
+  `nvidia-smi` (or `rocm-smi`) number (or UUID) of the card to use. The default is GPU 0.
 - **Updates**: after pulling new code, run `./start.sh --build` or `start.cmd -Build`.
 
 > **Security note.** By default there is **no API key**, the server listens on all network interfaces, and
@@ -186,7 +188,8 @@ A voice from an audio sample needs a consent recording first (`POST /v1/audio/vo
 
 | Variable | Default | |
 |---|---|---|
-| `OMNIVOICE_GPU` | 0 | GPU number from `nvidia-smi`, or a UUID |
+| `OMNIVOICE_GPU` | 0 | GPU number from `nvidia-smi` (or `rocm-smi`), or a UUID |
+| `GPU_VENDOR` | `auto` | `nvidia`, `rocm`, or `auto` (auto-detect the GPU vendor) |
 | `OMNIVOICE_PORT` | 8008 | Port of the API |
 | `OMNIVOICE_IDLE_TTL` | 600 | Unload the model after this many idle seconds (0 = never) |
 | `OMNIVOICE_MEM_FRACTION` | empty | Cap the model's share of GPU memory, e.g. `0.55` |
@@ -217,14 +220,69 @@ start script again.
 CPU mode (`OMNIVOICE_DEVICE=cpu`) works but is more than 100 times slower. Whisper, which transcribes voices
 that have no transcript, had a 1.7% word error rate on the bundled clips.
 
+## AMD GPUs (ROCm)
+
+The server also runs on an AMD GPU under [ROCm](https://rocm.docs.amd.com/). `./start.sh` auto-detects
+the GPU vendor (NVIDIA or AMD) and picks the matching image, so the quick start is the same. The
+differences, and why:
+
+- **FlashInfer is off.** FlashInfer is CUDA-only (it has no ROCm build). The model then uses
+  HuggingFace's default attention (SDPA), which works on ROCm.
+- **torch.compile is the speed lever.** `OMNIVOICE_COMPILE=1` is the ROCm default: Inductor and
+  Triton both support ROCm. Without FlashInfer the un-compiled baseline is still sub-second per
+  sentence; compile is the main speedup (on NVIDIA, FlashInfer is only about 25% faster than
+  torch.compile).
+- **torch 2.12.0.** The NVIDIA image uses torch 2.14.1; the newest `rocm/pytorch` build for Python
+  3.12 is 2.12.0 (rocm7.14). There is no 2.13/2.14 ROCm image yet, so the AMD image uses 2.12.0.
+  OmniVoice needs torch 2.4 or newer, so this is fine.
+
+Check that the container can see your AMD GPU (the `--device` flags are the ROCm passthrough):
+
+```bash
+docker run --rm --device /dev/kfd --device /dev/dri \
+  docker.io/rocm/pytorch:rocm7.14_ubuntu24.04_py3.12_pytorch_release_2.12.0 \
+  python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+**GPU architecture.** ROCm ships prebuilt kernels per `gfx` target; recent cards (for example
+gfx1201 / RDNA 4) are supported natively by rocm7.x. If you run an architecture the image does not
+know, set `HSA_OVERRIDE_GFX_VERSION` to the nearest supported target in `.env` (for example `11.0.0` for a gfx1100 card),
+then run the start script again.
+
+**Permissions.** If the container cannot open the GPU, add the container user to the `render` and
+`video` groups on the host (or pass `--group-add video --group-add render`).
+
+**Measured performance.** On an RX 9070 XT (gfx1201) the steady-state RTF was 0.44 (about 2.25× faster
+than real-time; the first request is slower while the reference voice is transcribed and encoded).
+The same model is roughly 10× faster on NVIDIA (RTF 0.032–0.043) thanks to FlashInfer, so expect a few
+seconds per sentence on AMD; see [Performance](#performance).
+
+**Do not enable the experimental AOTriton flash attention.** PyTorch ROCm ships an optional AOTriton
+flash-attention kernel (`TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`). On RDNA 4 (gfx1201) with
+torch 2.12.0 it hangs the server at 100% CPU during kernel compilation, so it is **not** enabled.
+The default SDPA attention above is the working path.
+
 ## Troubleshooting
 
 - **No GPU found**: run the `nvidia-smi` check above. On Linux, install the NVIDIA Container Toolkit.
+  For an AMD GPU, see [AMD GPUs (ROCm)](#amd-gpus-rocm).
 - **`MissingJITCacheError`**: the image was built for another GPU. Run `start.cmd -Build` or
   `./start.sh --build`. Tested on an RTX 3080 and an RTX 5090.
 - **A breath or blip at the start of the speech**: add silence to the voice's clip (see [Voices](#voices)), or
   use a clip with no breath before the first word.
 - **Other computers cannot connect**: use this computer's IP address and allow port 8008 in the firewall.
+- **AMD GPU not found in the container**: check the `--device /dev/kfd --device /dev/dri` passthrough
+  and the `render`/`video` group permissions (see [AMD GPUs (ROCm)](#amd-gpus-rocm)). If the
+  architecture is not supported, set `HSA_OVERRIDE_GFX_VERSION`.
+- **Server hangs at 100% CPU (ROCm)**: you likely set `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`.
+  It is broken on RDNA 4 (gfx1201) with torch 2.12.0 — remove it and restart.
+- **`curl` gets `Connection reset by peer` / HTTP 000 (Podman)**: Podman's `pasta`/`rootlessport`
+  port forwarder can fail to reach the container on the default bridge network (the container is
+  up and the port is bound inside, but host→container forwarding is dead). Work around it with
+  host networking instead of a published port:
+  - manual: `podman run ... --network host` (drop `-p 8008:8008`)
+  - podman-compose: set `network_mode: host` in the service and remove `ports:`
+  (Docker's port forwarding is not affected — keep `-p 8008:8008` / `ports:` there.)
 - **Harmless**: pip's `dependency resolver` error during the build, and the "unauthenticated requests" warning
   while the model downloads.
 - **Anything else**: `docker compose logs --tail 100`.
