@@ -48,8 +48,15 @@ logger = logging.getLogger("omnivoice.engine")
 # CPU) is left alone. OMNIVOICE_GPU_UUID is the older name and still works.
 _GPU = (os.environ.get("OMNIVOICE_GPU") or os.environ.get("OMNIVOICE_GPU_UUID") or "").strip()
 if _GPU:
+    # CUDA_* on the NVIDIA build. On the ROCm build PyTorch aliases the CUDA
+    # API to HIP, so the card is selected with HIP_VISIBLE_DEVICES (the real
+    # ROCm variable). It mirrors the resolved CUDA_VISIBLE_DEVICES so a caller
+    # that set CUDA_VISIBLE_DEVICES="-1" (the CPU contract) stays on the CPU
+    # instead of being re-enabled by OMNIVOICE_GPU. setdefault leaves a caller
+    # that already set them (the container, or "-1" for CPU).
     os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", _GPU)
+    os.environ.setdefault("HIP_VISIBLE_DEVICES", os.environ["CUDA_VISIBLE_DEVICES"])
 
 # Whisper (auto-transcription of a reference voice with no ref_text) runs on the
 # CPU: on the GPU it would add ~3.7 GB next to the TTS model (measured on an RTX
@@ -118,13 +125,16 @@ def _is_oom(e: BaseException) -> bool:
     """torch.OutOfMemoryError, or a RuntimeError that is an OOM in disguise:
     under WSL2 the driver can surface one as "device not ready", and on a full
     4 GB card expandable segments failed with "!handles_.at(i) INTERNAL ASSERT
-    FAILED ... CUDACachingAllocator.cpp" (the next request worked again)."""
+    FAILED ... CUDACachingAllocator.cpp" (the next request worked again). On
+    ROCm (AMD) the primary OOM is torch.OutOfMemoryError ("HIP out of memory"),
+    caught by the type-name check; the "hipcachingallocator" string covers the
+    ROCm form of that assert."""
     if type(e).__name__ == "OutOfMemoryError":
         return True
     msg = str(e).lower()
     return isinstance(e, RuntimeError) and (
         "out of memory" in msg or "device not ready" in msg
-        or ("internal assert failed" in msg and "cudacachingallocator" in msg))
+        or ("internal assert failed" in msg and ("cudacachingallocator" in msg or "hipcachingallocator" in msg)))
 
 
 def _no_tensor_cores(name: str, capability: tuple[int, int]) -> bool:
@@ -132,10 +142,19 @@ def _no_tensor_cores(name: str, capability: tuple[int, int]) -> bool:
     parts that report 7.5 like the RTX 20-series but lack them (GTX 16-series,
     MX 450/550, T400-T2000). Libraries take tensor-core paths for float16 there,
     which run slowly: on a GTX 1650 a sentence took 44.6 s in float16 and 16.3 s
-    in float32, with the card at 20 of 75 W."""
+    in float32, with the card at 20 of 75 W. AMD (ROCm) cards report a
+    capability of 7.0 or higher, so this never flags them: they use float16."""
     if capability < (7, 0):
         return True
     return capability == (7, 5) and bool(re.search(r"GTX 16|\bMX ?[45]\d0\b|\bT(400|500|550|600|1000|1200|2000)\b", name))
+
+
+def _is_rocm() -> bool:
+    """True when running on an AMD GPU under ROCm. PyTorch's ROCm build aliases
+    the CUDA API to HIP, so torch.cuda.* works; this just tells us the vendor,
+    to skip the NVIDIA-only FlashInfer path (it has no ROCm build)."""
+    import torch
+    return bool(getattr(torch.version, "hip", None))
 
 
 def _drop_graphs_after_each_generation(model) -> None:
@@ -523,7 +542,10 @@ class OmniVoiceEngine:
             asr_device=ASR_DEVICE,  # for the transformers fallback, see _ensure_asr
         )
         self.flashinfer_on = False
-        if FLASHINFER and str(self.device).startswith("cuda") and dtype != torch.float16:
+        if FLASHINFER and _is_rocm():
+            logger.info("FlashInfer is NVIDIA-only (no ROCm build); skipped on this AMD GPU. "
+                        "Speed comes from torch.compile (OMNIVOICE_COMPILE) instead.")
+        elif FLASHINFER and str(self.device).startswith("cuda") and dtype != torch.float16:
             logger.info("FlashInfer skipped: it needs float16, the model runs in %s.", dtype)
         elif FLASHINFER and str(self.device).startswith("cuda"):
             from omnivoice.models.omnivoice_flashinfer import apply_flashinfer
